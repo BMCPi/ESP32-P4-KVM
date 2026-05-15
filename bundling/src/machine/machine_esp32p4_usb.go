@@ -114,8 +114,8 @@ const (
 
 // DCFG
 const (
-	dwcDCFG_DEVSPD_FS_HSPHY = uint32(1) // Full Speed using HS PHY (UTMI+)
-	dwcDCFG_DEVADDR_SHIFT   = 4         // bits 10:4
+	dwcDCFG_DEVSPD_FS_HSPHY = uint32(1)       // Full Speed using HS PHY (UTMI+)
+	dwcDCFG_DEVADDR_SHIFT   = 4               // bits 10:4
 	dwcDCFG_DEVADDR_MASK    = uint32(0x7F << 4)
 )
 
@@ -162,9 +162,9 @@ const (
 
 // FIFO sizes (32-bit words)
 const (
-	dwcRXFIFO_WORDS   = uint32(256)                         // 1 KiB shared RX FIFO
-	dwcNPTXFIFO_WORDS = uint32(64)                          // 256 B non-periodic TX (EP0 IN)
-	dwcTXFIFO1_WORDS  = uint32(256)                         // 1 KiB bulk IN TX FIFO (FIFO 1)
+	dwcRXFIFO_WORDS   = uint32(256) // 1 KiB shared RX FIFO
+	dwcNPTXFIFO_WORDS = uint32(64)  // 256 B non-periodic TX (EP0 IN)
+	dwcTXFIFO1_WORDS  = uint32(256) // 1 KiB bulk IN TX FIFO (FIFO 1)
 	dwcTXFIFO1_START  = dwcRXFIFO_WORDS + dwcNPTXFIFO_WORDS // word 320
 )
 
@@ -277,7 +277,7 @@ type USB_DEVICE struct {
 }
 
 var (
-	_USBCDC          = &USB_DEVICE{Buffer: NewRingBuffer()}
+	_USBCDC = &USB_DEVICE{Buffer: NewRingBuffer()}
 	USBCDC  Serialer = _USBCDC
 )
 
@@ -417,8 +417,8 @@ func (dev *USBDevice) Configure(config UARTConfig) {
 			dwcGINT_RESETDET,
 	)
 	dwcReg(dwcDAINTMSK).Set((1 << 0) | (1 << 16)) // EP0 IN + EP0 OUT
-	dwcReg(dwcDIEPMSK).Set(1 << 0)                // XFERCOMPL
-	dwcReg(dwcDOEPMSK).Set((1 << 3) | (1 << 0))   // SETUPMSK | XFERCOMPL
+	dwcReg(dwcDIEPMSK).Set(1 << 0)                 // XFERCOMPL
+	dwcReg(dwcDOEPMSK).Set((1 << 3) | (1 << 0))    // SETUPMSK | XFERCOMPL
 	dwcReg(dwcGAHBCFG).SetBits(dwcGAHBCFG_GLBINTRMSK)
 
 	// 8. Connect: clear soft disconnect.

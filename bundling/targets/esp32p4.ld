@@ -92,6 +92,9 @@ SECTIONS
         *(.dram*)
         . = ALIGN(4);
         _edata = ABSOLUTE(.);
+        /* _sidata points to _sdata so that preinit()'s .data copy is a no-op.
+         * The ROM bootloader already loads .data from flash into SRAM. */
+        _sidata = _sdata;
     } > SRAM
 
     /* Startup code — loaded into SRAM by the ROM bootloader.
