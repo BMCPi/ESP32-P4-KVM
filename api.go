@@ -25,7 +25,7 @@ const (
 
 var (
 	powerActionOnce  sync.Once
-	powerActionQueue chan time.Duration
+	powerActionQueue = make(chan time.Duration, 1)
 )
 
 func startAPIServer() {
@@ -136,7 +136,6 @@ func authorizePowerReset(w http.ResponseWriter, r *http.Request) bool {
 
 func startPowerActionWorker() {
 	powerActionOnce.Do(func() {
-		powerActionQueue = make(chan time.Duration, 1)
 		go func() {
 			for duration := range powerActionQueue {
 				fmt.Printf("Executing power action for %s\n", duration)
@@ -147,10 +146,6 @@ func startPowerActionWorker() {
 }
 
 func enqueuePowerAction(duration time.Duration) bool {
-	if powerActionQueue == nil {
-		return false
-	}
-
 	select {
 	case powerActionQueue <- duration:
 		return true
