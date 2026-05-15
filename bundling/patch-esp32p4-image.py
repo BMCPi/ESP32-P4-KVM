@@ -9,12 +9,16 @@ the image header.  The ESP32-P4 ROM loader rejects any chip_id that is not 18:
 
 This script rewrites the image header in place so that:
 
-  * byte 12 (chip_id)  = 18  (ESP32-P4)
-  * byte 13 (chip_rev) = 0   (any/unspecified; ROM accepts when min_rev unset)
+  * byte 12 (chip_id)    = 18  (ESP32-P4)
+  * byte 13 (chip_rev)   = 0   (any/unspecified; ROM accepts when min_rev unset)
+  * byte 23 bit 0        = 0   (hash_appended cleared — disables ROM SHA-256
+                                verification, preventing HP_SYS_HP_WDT_RESET
+                                caused by the verify loop timing out on large
+                                images before call_start_cpu0 is reached)
 
-If byte 23 bit 0 is set (`hash_appended`), the trailing 32-byte SHA-256
-checksum is recomputed over the new payload so the ROM image hash check
-still passes.
+On ESP32-P4 ECO2, the TIMG0 WDT fires while the ROM verifies the SHA-256 of
+the full firmware image (~400 KB).  Clearing hash_appended makes the ROM skip
+verification entirely and jump directly to call_start_cpu0.
 
 Usage:
     patch-esp32p4-image.py <path-to-firmware.bin>
@@ -28,7 +32,6 @@ for the canonical image header layout used here.
 
 from __future__ import annotations
 
-import hashlib
 import sys
 from pathlib import Path
 
@@ -55,12 +58,14 @@ def patch(path: Path) -> bool:
         data[13] = 0
         changed = True
 
-    # If hash_appended is set, recompute the trailing SHA-256.
+    # Clear hash_appended (byte 23 bit 0) so the ROM bootloader skips SHA-256
+    # verification.  On ESP32-P4 ECO2 the TIMG0 WDT fires during verification
+    # of large images before call_start_cpu0 is ever reached, causing an
+    # HP_SYS_HP_WDT_RESET boot loop.  The trailing 32 SHA bytes are left in
+    # the binary but become inert once the flag is cleared.
     if data[23] & 0x01:
-        new_hash = hashlib.sha256(bytes(data[:-HASH_LEN])).digest()
-        if data[-HASH_LEN:] != new_hash:
-            data[-HASH_LEN:] = new_hash
-            changed = True
+        data[23] &= ~0x01
+        changed = True
 
     if changed:
         path.write_bytes(bytes(data))

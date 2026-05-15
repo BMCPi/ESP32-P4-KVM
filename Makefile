@@ -3,33 +3,57 @@
 # Dynamically find ESP32 USB port
 CONSOLE_PORT ?= $(shell ls /dev/cu.usb* 2>/dev/null | head -1)
 
-# Clean up detached screen sessions to prevent blocking
+# Clean up ALL screen sessions (Attached or Detached) to free serial port
 clean-screen:
-	@echo "Cleaning up detached screen sessions..."
+	@echo "Cleaning up screen sessions..."
 	sudo screen -wipe || true
-	sudo screen -ls | grep Detached | cut -d. -f1 | awk '{print $$1}' | xargs -I {} sudo screen -X -S {} quit || true
+	sudo screen -ls | grep -E 'Attached|Detached' | cut -d. -f1 | awk '{print $$1}' | xargs -I {} sudo screen -X -S {} quit || true
 
-# Build firmware with TinyGo
+# Build firmware with TinyGo and patch the image header
 build:
 	@echo "Building ESP32-P4 firmware..."
 	tinygo build -target esp32p4 -ldflags="-X main.configuredResetAuthToken=change-me" -o firmware.bin .
+	@echo "Patching image header (chip_id=18, hash_appended=0)..."
+	python3 bundling/patch-esp32p4-image.py firmware.bin
+
+build-demo:
+	@echo "Building ESP32-P4 demo firmware..."
+	tinygo build -target esp32p4 -o demo.bin ./cmd/demo
+	@echo "Patching image header (chip_id=18, hash_appended=0)..."
+	python3 bundling/patch-esp32p4-image.py demo.bin
 
 # Alias for build (cross-compile for consistency with workspace tasks)
 cross-compile: build
 
-# Flash firmware to device (clean screen first)
+# Flash firmware to device (clean screen first, retry up to 10× for WDT boot-loop churn)
 flash: clean-screen
 	@echo "Flashing ESP32-P4 firmware on $(CONSOLE_PORT)..."
-	tinygo flash -target esp32p4 -port $(CONSOLE_PORT) .
+	@for i in $$(seq 1 10); do \
+		echo "Flash attempt $$i/10..."; \
+		tinygo flash -target esp32p4 -port $(CONSOLE_PORT) . && exit 0; \
+		echo "Attempt $$i failed, retrying in 1s..."; \
+		sleep 1; \
+	done; exit 1
 
-# Open serial console and auto-disconnect after 30 lines
+flash-demo: clean-screen
+	@echo "Flashing ESP32-P4 demo firmware on $(CONSOLE_PORT)..."
+	@for i in $$(seq 1 10); do \
+		echo "Flash attempt $$i/10..."; \
+
+		tinygo flash -target esp32p4 -port $(CONSOLE_PORT) ./cmd/demo && exit 0; \
+		echo "Attempt $$i failed, retrying in 1s..."; \
+		sleep 1; \
+	done; exit 1
+
+# Open serial console and stream for 10 seconds
 terminal:
 	@if [ -z "$(CONSOLE_PORT)" ]; then \
-		echo "No /dev/cu.usbmodem* console device found."; \
+		echo "No /dev/cu.usb* console device found."; \
 		exit 1; \
 	fi
-	@echo "Opening console on $(CONSOLE_PORT) (115200), stopping after 30 lines..."
-	sudo screen $(CONSOLE_PORT) 115200 | head -n 30 || true
+	@echo "Streaming $(CONSOLE_PORT) at 115200 for 10 seconds..."
+	@stty -f "$(CONSOLE_PORT)" 115200 cs8 -cstopb -parenb cread clocal raw -echo
+	@cat "$(CONSOLE_PORT)" & CPID=$$!; sleep 10; kill $$CPID 2>/dev/null; wait $$CPID 2>/dev/null; true
 
 # Build and flash in one command
 all: build flash
