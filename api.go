@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tinywasm/fmt"
+	"tinygo.org/x/drivers/netlink"
 )
 
 type ResetRequest struct {
@@ -32,8 +33,9 @@ var (
 )
 
 func startAPIServer() {
-	if err := initEthernet(); err != nil {
-		fmt.Printf("Ethernet initialization failed: %s\n", err)
+	link, _ := Probe()
+	if err := link.NetConnect(&netlink.ConnectParams{}); err != nil {
+		fmt.Printf("Network connect failed: %s\n", err)
 		return
 	}
 
