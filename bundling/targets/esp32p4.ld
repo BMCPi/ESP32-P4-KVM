@@ -12,9 +12,11 @@
  *   - The MMU still works in 64KB pages, so paddr%64KB == vaddr%64KB must hold.
  *
  * Because the binary lands at flash offset 0x2000, the dummy sections below
- * add 0x2000 to their offsets compared to the C3 script, ensuring the low
- * 16 bits of every virtual address match the corresponding flash physical
- * address.
+ * ensure the low 16 bits of every virtual address match the corresponding
+ * flash physical address (required by the 64KB-page cache MMU).
+ * esptool sorts ELF segments by virtual address, so the on-flash order is:
+ *   IROM (0x40…) → DROM (0x44…) → SRAM (0x4FF…).
+ * .text_dummy and .rodata_dummy account for this order.
  */
 
 MEMORY
@@ -36,18 +38,60 @@ ENTRY(call_start_cpu0)
 
 SECTIONS
 {
-    /* Dummy section: the P4 ROM loads the image from flash 0x2000, so all
-     * segment offsets must account for a 0x2000 base.
-     * This positions .rodata so its VMA low-16 == physical-address low-16:
-     *   virtual  0x44002020: (0x44000000 + 0x2000 + 0x18 + 0x8)
-     *   physical       0x2020 in flash
-     *   0x2020 % 0x10000 == 0x44002020 % 0x10000  ✓
+    /* ── IROM: code mapped via instruction-bus L2-cache MMU ─────────────────
+     *
+     * esptool sorts ELF LOAD segments by virtual address when writing the
+     * binary, so the actual on-flash order is always:
+     *
+     *   [0x2000] image_header (0x18 bytes)
+     *   [0x2018] IROM segment header (0x8 bytes)   ← FIRST (VMA 0x40…)
+     *   [0x2020] IROM data (.text)
+     *   [0x2020+T] DROM segment header (0x8 bytes)  ← SECOND (VMA 0x44…)
+     *   [0x2028+T] DROM data (.rodata)
+     *   [0x2028+T+D] SRAM segments (.data, .init)   ← LAST  (VMA 0x4FF…)
+     *
+     * The cache MMU maps 64 KB pages linearly: virtual 0x40000000 + off
+     * → flash physical off (with paddr=0 in Cache_FLASH_MMU_Set).
+     * The low-16-bit alignment constraint requires:
+     *   VMA % 0x10000 == physical_flash_address % 0x10000
+     *
+     * IROM data starts at physical 0x2000 + 0x18 + 0x8 = 0x2020.
+     * → IROM VMA must have low-16 = 0x2020.
+     * → .text_dummy advances by 0x2020 = 0x2000 + 0x18 + 0x8.
+     */
+    .text_dummy (NOLOAD): ALIGN(4)
+    {
+        . += 0x2000;   /* P4 ROM reads image from flash 0x2000 */
+        . += 0x18;     /* esp_image_header_t */
+        . += 0x8;      /* IROM segment header (IROM is first in binary) */
+    } > IROM
+
+    /* Code that runs from flash via the L2-cache IROM MMU mapping. */
+    .text : ALIGN(4)
+    {
+        . = ALIGN(256);
+        *(.text.exception_vectors)
+        . = ALIGN(4);
+        *(.text .text.*)
+        _irom_end = .;
+    } > IROM
+
+    /* ── DROM: read-only data mapped via data-bus L2-cache MMU ──────────────
+     *
+     * DROM comes after IROM in the binary (VMA 0x44… > 0x40…).
+     * Physical flash of DROM data = 0x2000 + 0x18 + 0x8 + SIZEOF(.text) + 0x8
+     *                             = 0x2028 + SIZEOF(.text)
+     * → DROM VMA must have low-16 = (0x2028 + SIZEOF(.text)) % 0x10000.
+     * → .rodata_dummy advances by 0x2028 + SIZEOF(.text)
+     *   (SIZEOF(.text) is a backward reference — .text was placed above).
      */
     .rodata_dummy (NOLOAD): ALIGN(4)
     {
-        . += 0x2000;   /* bootloader offset: P4 ROM reads image from flash 0x2000 */
-        . += 0x18;     /* esp_image_header_t */
-        . += 0x8;      /* DROM segment header */
+        . += 0x2000;          /* flash base */
+        . += 0x18;            /* esp_image_header_t */
+        . += 0x8;             /* IROM segment header */
+        . += SIZEOF(.text);   /* IROM segment data */
+        . += 0x8;             /* DROM segment header */
     } > DROM
 
     /* Constant global variables — stored in DROM (accessed via data bus MMU). */
@@ -57,6 +101,12 @@ SECTIONS
         *(.srodata*)
         . = ALIGN(4);
     } > DROM
+
+    /* ── SRAM: stack, BSS, initialized data, startup code ───────────────────
+     *
+     * These segments are physically copied by the ROM bootloader into SRAM
+     * at their load addresses (no cache/MMU mapping needed).
+     */
 
     /* Stack at the bottom of SRAM.  Stack overflow corrupts the BSS section
      * (readable in a debugger) rather than silently trashing arbitrary data.
@@ -107,38 +157,6 @@ SECTIONS
         *(.init)
         __init_end = .;
     } > SRAM
-
-    /* Dummy section in IROM to align the .text segment so that the low 16 bits
-     * of its virtual address match the low 16 bits of its flash physical address.
-     *
-     * Flash layout starting at 0x2000:
-     *   [0x2000] image header (0x18 bytes)
-     *   [0x2018] DROM segment header + .rodata  (optional)
-     *   [0x2018+D] SRAM segment header + .data + .init
-     *   [0x2018+D+S] IROM segment header + .text
-     *
-     * The dummy accumulates these offsets in the IROM address space.
-     */
-    .text_dummy (NOLOAD): ALIGN(4)
-    {
-        . += 0x2000;   /* boot offset */
-        . += 0x18;     /* esp_image_header_t */
-        /* DROM segment (header only present when .rodata is non-empty) */
-        . += SIZEOF(.rodata) + ((SIZEOF(.rodata) != 0) ? 0x8 : 0);
-        /* SRAM segment (header only present when .data+.init is non-empty) */
-        . += (SIZEOF(.data) + SIZEOF(.init)) + ((SIZEOF(.data) + SIZEOF(.init) != 0) ? 0x8 : 0);
-        . += 0x8;      /* IROM segment header */
-    } > IROM
-
-    /* Code that runs from flash via the L2-cache IROM MMU mapping. */
-    .text : ALIGN(4)
-    {
-        . = ALIGN(256);
-        *(.text.exception_vectors)
-        . = ALIGN(4);
-        *(.text .text.*)
-        _irom_end = .;
-    } > IROM
 
     /* For the GC: mark the flash-mapped DROM window.
      * Convert from IROM address to equivalent DROM address (same flash page,

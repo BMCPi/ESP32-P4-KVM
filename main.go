@@ -31,8 +31,17 @@ func setPin(pin int, high bool) {
 }
 
 func main() {
+	println("Starting ESP32-P4 KVM Controller")
+
+	println("Setting up GPIO...")
 	setupGPIO()
+	println("GPIO setup complete.")
+
+	println("Starting power action worker...")
 	startPowerActionWorker()
+	println("Power action worker started.")
+
+	println("Initializing storage...")
 
 	if err := initStorage(); err != nil {
 		println("Storage warning: Virtual Media unavailable -", err.Error())
