@@ -2,11 +2,10 @@
 """Patch a TinyGo-produced ESP32 image so the ROM bootloader on an ESP32-P4
 (ImageChipID = 18) accepts it.
 
-TinyGo 0.41.x has no built-in `esp32p4` binary-format. The closest available
-format is `esp32c3`, which writes ImageChipID = 5 into the image header. The
-ESP32-P4 ROM loader rejects that with:
+TinyGo's `esp32` binary-format writes ImageChipID = 0 (original ESP32) into
+the image header.  The ESP32-P4 ROM loader rejects any chip_id that is not 18:
 
-    Invalid chip id. Expected 18 read 5. Bootloader for wrong chip?
+    Invalid chip id. Expected 18 read 0. Bootloader for wrong chip?
 
 This script rewrites the image header in place so that:
 

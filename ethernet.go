@@ -1,4 +1,4 @@
-//go:build tinygo && esp32p4_ethernet
+//go:build tinygo
 
 package main
 
