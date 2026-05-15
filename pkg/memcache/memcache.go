@@ -1,6 +1,6 @@
 //go:build tinygo
 
-package main
+package memcache
 
 import (
 	"sync"

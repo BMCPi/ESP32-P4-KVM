@@ -39,7 +39,6 @@ flash-demo: clean-screen
 	@echo "Flashing ESP32-P4 demo firmware on $(CONSOLE_PORT)..."
 	@for i in $$(seq 1 10); do \
 		echo "Flash attempt $$i/10..."; \
-
 		tinygo flash -target esp32p4 -port $(CONSOLE_PORT) ./cmd/demo && exit 0; \
 		echo "Attempt $$i failed, retrying in 1s..."; \
 		sleep 1; \

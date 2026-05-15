@@ -1,6 +1,6 @@
 //go:build tinygo
 
-package main
+package storage
 
 import (
 	"github.com/tinywasm/fmt"

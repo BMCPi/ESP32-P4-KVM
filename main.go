@@ -43,15 +43,15 @@ func main() {
 
 	println("Initializing storage...")
 
-	if err := initStorage(); err != nil {
-		println("Storage warning: Virtual Media unavailable -", err.Error())
-	} else {
-		startVirtualMedia()
-	}
+	// if err := initStorage(); err != nil {
+	// 	println("Storage warning: Virtual Media unavailable -", err.Error())
+	// } else {
+	// 	startVirtualMedia()
+	// }
 
-	if err := initSerial(); err != nil {
-		println("Serial warning:", err.Error())
-	}
+	// if err := initSerial(); err != nil {
+	// 	println("Serial warning:", err.Error())
+	// }
 
 	go startAPIServer()
 

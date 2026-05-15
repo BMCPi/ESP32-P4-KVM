@@ -1,6 +1,6 @@
 //go:build tinygo
 
-package main
+package storage
 
 import "machine/usb/msc"
 
