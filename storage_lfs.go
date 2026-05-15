@@ -8,18 +8,16 @@ import (
 	"tinygo.org/x/tinyfs/littlefs"
 )
 
-// filesystem is a LittleFS instance mounted on blockDevice. The firmware uses
-// it for its own file access (boot payloads, configs).
-//
-// NOTE: LittleFS and the USB MSC driver share the same underlying block
-// device. Concurrent access is safe only when no MSC write transfer is in
-// progress; unmount the filesystem before transferring large images.
+// filesystem is a LittleFS instance mounted on lfsDevice, the tail partition
+// of the SD card. It provides local storage for the ESP32 (configs, payloads)
+// and is invisible to the remote machine, which sees only mscDevice.
 var filesystem *littlefs.LFS
 
-// mountFilesystem mounts LittleFS on the already-initialised blockDevice.
-// On a blank card the superblock won't be present, so it formats and retries.
+// mountFilesystem mounts LittleFS on lfsDevice (the last 64 MiB of the SD
+// card). On a blank partition the superblock won't be present, so it formats
+// and retries automatically.
 func mountFilesystem() error {
-	filesystem = littlefs.New(blockDevice)
+	filesystem = littlefs.New(lfsDevice)
 	if err := filesystem.Mount(); err != nil {
 		fmt.Println("LittleFS mount failed, formatting:", err)
 		if fmtErr := filesystem.Format(); fmtErr != nil {
