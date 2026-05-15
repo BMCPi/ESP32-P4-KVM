@@ -24,7 +24,8 @@ const (
 )
 
 var (
-	powerActionOnce  sync.Once
+	powerActionOnce sync.Once
+	// Allow one queued command while one is executing; additional requests are rejected.
 	powerActionQueue = make(chan time.Duration, 1)
 )
 
@@ -121,7 +122,7 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 func authorizePowerReset(w http.ResponseWriter, r *http.Request) bool {
 	if configuredResetAuthToken == "" {
-		http.Error(w, "Reset action disabled", http.StatusServiceUnavailable)
+		http.Error(w, "Reset action disabled", http.StatusForbidden)
 		return false
 	}
 
