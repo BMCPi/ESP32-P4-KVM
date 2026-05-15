@@ -28,7 +28,7 @@ func initStorage() error {
 	blockDevice = sdcard.New(spi, sdPin)
 
 	if err := blockDevice.Configure(); err != nil {
-		return fmt.Errorf("failed to configure SD card: %v", err)
+		return fmt.Errorf("failed to configure SD card: %w", err)
 	}
 
 	fmt.Println("SD card initialized successfully.")

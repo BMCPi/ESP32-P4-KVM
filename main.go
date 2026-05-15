@@ -14,6 +14,7 @@ var (
 
 func main() {
 	setupGPIO()
+	startPowerActionWorker()
 
 	if err := initStorage(); err != nil {
 		println("Storage warning: Virtual Media unavailable -", err.Error())

@@ -3,15 +3,29 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
 type ResetRequest struct {
 	ResetType string `json:"ResetType"`
 }
+
+const (
+	resetActionTokenHeader   = "X-BMC-Reset-Token"
+	resetActionMaxBodyBytes  = 128
+	configuredResetAuthToken = ""
+)
+
+var (
+	powerActionOnce  sync.Once
+	powerActionQueue chan time.Duration
+)
 
 func startAPIServer() {
 	if err := initEthernet(); err != nil {
@@ -34,27 +48,42 @@ func handlePowerReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !authorizePowerReset(w, r) {
+		return
+	}
+
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, resetActionMaxBodyBytes)
 
 	var req ResetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
+	var duration time.Duration
 	switch req.ResetType {
 	case "On", "GracefulShutdown":
-		fmt.Println("Triggering short press...")
-		pressButton(pwrButton, 500*time.Millisecond)
+		duration = 500 * time.Millisecond
 	case "ForceOff":
-		fmt.Println("Triggering long press...")
-		pressButton(pwrButton, 6*time.Second)
+		duration = 6 * time.Second
 	default:
 		http.Error(w, "Invalid ResetType", http.StatusBadRequest)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	if !enqueuePowerAction(duration) {
+		http.Error(w, "Power action busy", http.StatusTooManyRequests)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +105,45 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		fmt.Printf("failed to write system status response: %s\n", err)
+		return
+	}
+}
+
+func authorizePowerReset(w http.ResponseWriter, r *http.Request) bool {
+	if configuredResetAuthToken == "" {
+		http.Error(w, "Reset action disabled", http.StatusServiceUnavailable)
+		return false
+	}
+
+	token := r.Header.Get(resetActionTokenHeader)
+	if subtle.ConstantTimeCompare([]byte(token), []byte(configuredResetAuthToken)) != 1 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+
+	return true
+}
+
+func startPowerActionWorker() {
+	powerActionOnce.Do(func() {
+		powerActionQueue = make(chan time.Duration, 1)
+		go func() {
+			for duration := range powerActionQueue {
+				fmt.Printf("Executing power action for %s\n", duration)
+				pressButton(pwrButton, duration)
+			}
+		}()
+	})
+}
+
+func enqueuePowerAction(duration time.Duration) bool {
+	startPowerActionWorker()
+
+	select {
+	case powerActionQueue <- duration:
+		return true
+	default:
+		return false
 	}
 }
