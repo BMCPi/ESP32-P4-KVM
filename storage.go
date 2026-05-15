@@ -25,7 +25,8 @@ func initStorage() error {
 	}
 
 	sdPin := machine.GPIO10
-	blockDevice = sdcard.New(spi, sdPin)
+	bd := sdcard.New(spi, sdPin, machine.GPIO12, machine.GPIO11, machine.GPIO13)
+	blockDevice = &bd
 
 	if err := blockDevice.Configure(); err != nil {
 		return fmt.Errorf("failed to configure SD card: %w", err)

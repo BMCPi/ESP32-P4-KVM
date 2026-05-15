@@ -12,6 +12,10 @@ var (
 	sensePin  machine.Pin
 )
 
+const (
+	PinOutputModeGPOpenDrain machine.PinMode = 4
+)
+
 func main() {
 	setupGPIO()
 	startPowerActionWorker()
@@ -31,7 +35,7 @@ func main() {
 
 func setupGPIO() {
 	pwrButton = machine.GPIO16
-	pwrButton.Configure(machine.PinConfig{Mode: machine.PinOutputOpenDrain})
+	pwrButton.Configure(machine.PinConfig{Mode: PinOutputModeGPOpenDrain})
 	pwrButton.High()
 
 	sensePin = machine.GPIO17
