@@ -19,6 +19,7 @@
 package machine
 
 import (
+	"device/esp"
 	"machine/usb"
 	"machine/usb/descriptor"
 	"runtime/volatile"
@@ -114,8 +115,8 @@ const (
 
 // DCFG
 const (
-	dwcDCFG_DEVSPD_FS_HSPHY = uint32(1)       // Full Speed using HS PHY (UTMI+)
-	dwcDCFG_DEVADDR_SHIFT   = 4               // bits 10:4
+	dwcDCFG_DEVSPD_FS_HSPHY = uint32(1) // Full Speed using HS PHY (UTMI+)
+	dwcDCFG_DEVADDR_SHIFT   = 4         // bits 10:4
 	dwcDCFG_DEVADDR_MASK    = uint32(0x7F << 4)
 )
 
@@ -162,9 +163,9 @@ const (
 
 // FIFO sizes (32-bit words)
 const (
-	dwcRXFIFO_WORDS   = uint32(256) // 1 KiB shared RX FIFO
-	dwcNPTXFIFO_WORDS = uint32(64)  // 256 B non-periodic TX (EP0 IN)
-	dwcTXFIFO1_WORDS  = uint32(256) // 1 KiB bulk IN TX FIFO (FIFO 1)
+	dwcRXFIFO_WORDS   = uint32(256)                         // 1 KiB shared RX FIFO
+	dwcNPTXFIFO_WORDS = uint32(64)                          // 256 B non-periodic TX (EP0 IN)
+	dwcTXFIFO1_WORDS  = uint32(256)                         // 1 KiB bulk IN TX FIFO (FIFO 1)
 	dwcTXFIFO1_START  = dwcRXFIFO_WORDS + dwcNPTXFIFO_WORDS // word 320
 )
 
@@ -277,7 +278,7 @@ type USB_DEVICE struct {
 }
 
 var (
-	_USBCDC = &USB_DEVICE{Buffer: NewRingBuffer()}
+	_USBCDC          = &USB_DEVICE{Buffer: NewRingBuffer()}
 	USBCDC  Serialer = _USBCDC
 )
 
@@ -373,13 +374,33 @@ func (dev *USBDevice) Configure(config UARTConfig) {
 	}
 	dev.initcomplete = true
 
-	// 1. Wait for AHB idle before touching the core.
-	for dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_AHBIDLE == 0 {
+	// 0. Enable USB_OTG20 system clock and deassert resets via HP_SYS_CLKRST /
+	//    LP_AON_CLKRST before touching any DWC2 registers. Without this the AHB
+	//    idle poll below spins forever and the watchdog resets the chip.
+	esp.HP_SYS_CLKRST.SetSOC_CLK_CTRL1_REG_USB_OTG20_SYS_CLK_EN(1)
+	// Deassert OTG20 PHY reset then OTG20 core reset (order matters: PHY first).
+	esp.LP_AON_CLKRST.SetLP_AONCLKRST_HP_USB_CLKRST_CTRL1_LP_AONCLKRST_RST_EN_USB_OTG20_PHY(0)
+	esp.LP_AON_CLKRST.SetLP_AONCLKRST_HP_USB_CLKRST_CTRL1_LP_AONCLKRST_RST_EN_USB_OTG20(0)
+	// Enable the PHY reference clock (source 0 = XTAL, the reset default).
+	esp.LP_AON_CLKRST.SetLP_AONCLKRST_HP_USB_CLKRST_CTRL1_LP_AONCLKRST_USB_OTG20_PHYREF_CLK_EN(1)
+	// Short stabilisation delay (~5 µs at 360 MHz).
+	for i := 0; i < 2000; i++ {
+		_ = i
+	}
+
+	// 1. Wait for AHB idle before touching the core (max ~50 ms).
+	for i := 0; i < 5000000; i++ {
+		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_AHBIDLE != 0 {
+			break
+		}
 	}
 
 	// 2. Core soft reset. DWC v4.30a: wait for CSFTRSTDONE (bit 29), not CSFTRST clearing.
 	dwcReg(dwcGRSTCTL).SetBits(dwcGRSTCTL_CSFTRST)
-	for dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_CSFTRSTDONE == 0 {
+	for i := 0; i < 5000000; i++ {
+		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_CSFTRSTDONE != 0 {
+			break
+		}
 	}
 	dwcReg(dwcGRSTCTL).ClearBits(dwcGRSTCTL_CSFTRST)
 
@@ -396,10 +417,16 @@ func (dev *USBDevice) Configure(config UARTConfig) {
 
 	// 5. Flush all TX FIFOs then the RX FIFO.
 	dwcReg(dwcGRSTCTL).Set(dwcGRSTCTL_TXFFLSH | (0x10 << 6)) // txfnum=0x10 → flush all
-	for dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_TXFFLSH != 0 {
+	for i := 0; i < 1000000; i++ {
+		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_TXFFLSH == 0 {
+			break
+		}
 	}
 	dwcReg(dwcGRSTCTL).Set(dwcGRSTCTL_RXFFLSH)
-	for dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_RXFFLSH != 0 {
+	for i := 0; i < 1000000; i++ {
+		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_RXFFLSH == 0 {
+			break
+		}
 	}
 
 	// 6. Device speed: Full Speed using HS PHY.
@@ -417,8 +444,8 @@ func (dev *USBDevice) Configure(config UARTConfig) {
 			dwcGINT_RESETDET,
 	)
 	dwcReg(dwcDAINTMSK).Set((1 << 0) | (1 << 16)) // EP0 IN + EP0 OUT
-	dwcReg(dwcDIEPMSK).Set(1 << 0)                 // XFERCOMPL
-	dwcReg(dwcDOEPMSK).Set((1 << 3) | (1 << 0))    // SETUPMSK | XFERCOMPL
+	dwcReg(dwcDIEPMSK).Set(1 << 0)                // XFERCOMPL
+	dwcReg(dwcDOEPMSK).Set((1 << 3) | (1 << 0))   // SETUPMSK | XFERCOMPL
 	dwcReg(dwcGAHBCFG).SetBits(dwcGAHBCFG_GLBINTRMSK)
 
 	// 8. Connect: clear soft disconnect.
@@ -480,7 +507,10 @@ func handleUSBDWCIRQ() {
 // handleUSBReset handles a USB bus reset.
 func handleUSBReset() {
 	dwcReg(dwcGRSTCTL).Set(dwcGRSTCTL_TXFFLSH | (0x10 << 6))
-	for dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_TXFFLSH != 0 {
+	for i := 0; i < 1000000; i++ {
+		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_TXFFLSH == 0 {
+			break
+		}
 	}
 	dwcReg(dwcDAINTMSK).Set((1 << 0) | (1 << 16))
 	dwcReg(dwcDIEPMSK).Set(1 << 0)

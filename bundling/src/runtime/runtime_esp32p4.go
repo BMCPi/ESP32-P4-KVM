@@ -1,4 +1,3 @@
-package runtime
 //go:build esp32p4
 
 package runtime
@@ -18,16 +17,30 @@ import (
 //
 //export main
 func main() {
-	// Watchdog timers were already disabled by call_start_cpu0 via the ROM
-	// disable_default_watchdog call.  No register writes needed here.
+	// Disable ALL watchdog timers. disable_default_watchdog (called by
+	// call_start_cpu0) should handle most, but we explicitly kill every
+	// WDT to be certain — some may survive the ROM call.
 
-	// Disable the TIMG0 watchdog just in case it was re-enabled.
-	esp.TIMG0.WDTWPROTECT.Set(0x50D83AA1) // write-protection key
+	// TIMG0 watchdog (HP_SYS_HP_WDT_RESET source if left in flash-boot mode).
+	esp.TIMG0.WDTWPROTECT.Set(0x50D83AA1)
 	esp.TIMG0.WDTCONFIG0.Set(0)
 
-	// Clear .bss: zero-initialized global variables.
-	// The ROM bootloader has already loaded .data from flash.
-	clearbss()
+	// TIMG1 watchdog (same reset path as TIMG0 if enabled).
+	esp.TIMG1.WDTWPROTECT.Set(0x50D83AA1)
+	esp.TIMG1.WDTCONFIG0.Set(0)
+
+	// LP_WDT (RWDT) — causes CHIP_LP_WDT_RESET (code 0x10).
+	esp.LP_WDT.WPROTECT.Set(0x50D83AA1)
+	esp.LP_WDT.CONFIG0.Set(0)
+	esp.LP_WDT.WPROTECT.Set(0)
+
+	// LP_WDT Super WDT (SWD) — also a chip-level reset source.
+	esp.LP_WDT.SWD_WPROTECT.Set(0x8F1D312A)
+	esp.LP_WDT.SetSWD_CONFIG_SWD_DISABLE(1)
+	esp.LP_WDT.SWD_WPROTECT.Set(0)
+
+	// Clear .bss and copy .data.
+	preinit()
 
 	// Set the interrupt address (vectored mode: bit[1:0]=1).
 	// The _vector_table is 256-byte aligned (see esp32p4.S).
@@ -48,22 +61,6 @@ func main() {
 
 func init() {
 	machine.InitSerial()
-}
-
-//go:extern _sbss
-var _sbss [0]byte
-
-//go:extern _ebss
-var _ebss [0]byte
-
-// clearbss zeroes the .bss section.  The ROM bootloader loads .data for us so
-// we only need to zero .bss here.
-func clearbss() {
-	ptr := unsafe.Pointer(&_sbss)
-	for ptr != unsafe.Pointer(&_ebss) {
-		*(*uint32)(ptr) = 0
-		ptr = unsafe.Add(ptr, 4)
-	}
 }
 
 // initTimer configures TIMG0 timer 0 as a free-running 40 MHz counter
