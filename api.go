@@ -36,6 +36,8 @@ func startAPIServer() {
 		return
 	}
 
+	go startSerialTerminal()
+
 	http.HandleFunc("/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", handlePowerReset)
 	http.HandleFunc("/redfish/v1/Systems/1", handleSystemStatus)
 

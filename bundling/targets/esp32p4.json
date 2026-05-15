@@ -1,0 +1,10 @@
+{
+  "inherits": [
+    "esp32c3-generic"
+  ],
+  "build-tags": [
+    "esp32p4"
+  ],
+  "flash-method": "esptool",
+  "code-model": "medium"
+}

@@ -1,4 +1,4 @@
-//go:build tinygo && (rp2040 || rp2350 || atsamd51 || atsamd21 || nrf52840)
+//go:build tinygo && esp32p4
 
 package main
 

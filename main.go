@@ -5,6 +5,7 @@ package main
 import (
 	"machine"
 	"time"
+	"unsafe"
 )
 
 var (
@@ -14,7 +15,20 @@ var (
 
 const (
 	PinOutputModeGPOpenDrain machine.PinMode = 4
+	DR_REG_GPIO_BASE                         = 0x50110000                // P4 specific GPIO base
+	GPIO_OUT_W1TS                            = DR_REG_GPIO_BASE + 0x0008 // Set register
+	GPIO_OUT_W1TC                            = DR_REG_GPIO_BASE + 0x000C // Clear register
+	pplClockFreq                             = 80_000_000
+	// Define RMII / MAC registers here
 )
+
+func setPin(pin int, high bool) {
+	reg := GPIO_OUT_W1TC
+	if high {
+		reg = GPIO_OUT_W1TS
+	}
+	*(*uint32)(unsafe.Pointer(uintptr(reg))) = (1 << uint32(pin))
+}
 
 func main() {
 	setupGPIO()
@@ -24,6 +38,10 @@ func main() {
 		println("Storage warning: Virtual Media unavailable -", err.Error())
 	} else {
 		startVirtualMedia()
+	}
+
+	if err := initSerial(); err != nil {
+		println("Serial warning:", err.Error())
 	}
 
 	go startAPIServer()
