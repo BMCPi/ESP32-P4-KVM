@@ -35,7 +35,9 @@ func main() {
 	esp.LP_WDT.WPROTECT.Set(0)
 
 	// LP_WDT Super WDT (SWD) — also a chip-level reset source.
-	esp.LP_WDT.SWD_WPROTECT.Set(0x8F1D312A)
+	// ESP32-P4 uses the same write-protect key (0x50D83AA1) for both
+	// the RWDT and the SWD — unlike older chips (C3/S3) which use 0x8F1D312A.
+	esp.LP_WDT.SWD_WPROTECT.Set(0x50D83AA1)
 	esp.LP_WDT.SetSWD_CONFIG_SWD_DISABLE(1)
 	esp.LP_WDT.SWD_WPROTECT.Set(0)
 

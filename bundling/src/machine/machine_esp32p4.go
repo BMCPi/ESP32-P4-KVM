@@ -81,23 +81,41 @@ const (
 	GPIO53 Pin = 53
 )
 
-// UART is a minimal stub required by machine/uart.go.
-// ESP32-P4 uses USB CDC for serial output (see machine_esp32p4_usb.go).
+// UART wraps a hardware UART peripheral for serial I/O.
+// On the Waveshare ESP32-P4-ETH the USB-C UART/JTAG port is wired to the
+// UART0 hardware peripheral via an onboard USB-Serial converter.
+// The ROM already configures UART0 at 115200 baud, so writeByte can write
+// directly to the FIFO without any further initialisation.
 type UART struct {
+	Bus    *esp.UART_Type // hardware peripheral; nil ⇒ no-op
 	Buffer *RingBuffer
 }
 
 var (
 	UART0       = &_UART0
-	_UART0      = UART{Buffer: NewRingBuffer()}
+	_UART0      = UART{Bus: esp.UART0, Buffer: NewRingBuffer()}
 	UART1       = &_UART1
-	_UART1      = UART{Buffer: NewRingBuffer()}
+	_UART1      = UART{Bus: esp.UART1, Buffer: NewRingBuffer()}
 	DefaultUART = UART0
 )
 
 func (uart *UART) Configure(config UARTConfig) error { return nil }
-func (uart *UART) writeByte(c byte) error            { return nil }
-func (uart *UART) flush()                            {}
+
+// writeByte sends a single byte through the UART hardware FIFO.
+// STATUS[23:16] holds the current TX FIFO occupancy (0–128); the hardware
+// FIFO is 128 bytes deep, so we wait while it is full before writing.
+func (uart *UART) writeByte(c byte) error {
+	if uart.Bus == nil {
+		return nil
+	}
+	for (uart.Bus.STATUS.Get()>>16)&0xFF >= 127 {
+		// spin until FIFO has room
+	}
+	uart.Bus.FIFO.Set(uint32(c))
+	return nil
+}
+
+func (uart *UART) flush() {}
 
 // IO_MUX register bit positions (same layout for all GPIOn pads).
 const (

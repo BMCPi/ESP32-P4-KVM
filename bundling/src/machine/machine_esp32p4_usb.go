@@ -20,11 +20,31 @@ package machine
 
 import (
 	"device/esp"
+	"device/riscv"
 	"machine/usb"
 	"machine/usb/descriptor"
 	"runtime/volatile"
 	"unsafe"
 )
+
+// cyclesPerMs is approximate: 360 MHz CPU clock.
+// Used for hardware-CSR-based timeout loops that LLVM cannot optimize away.
+const cyclesPerMs = uint(360_000)
+
+// waitUntilOrTimeout polls cond for up to timeoutMs milliseconds.
+// Uses the RISC-V CYCLE CSR (hardware read, immune to LLVM optimization).
+// Returns true if cond became true before the deadline.
+func waitUntilOrTimeout(timeoutMs uint, cond func() bool) bool {
+	start := uint(riscv.CYCLE.Get())
+	for {
+		if cond() {
+			return true
+		}
+		if uint(riscv.CYCLE.Get())-start >= timeoutMs*cyclesPerMs {
+			return false
+		}
+	}
+}
 
 // ============================================================
 // DWC2 Register Offsets
@@ -383,31 +403,32 @@ func (dev *USBDevice) Configure(config UARTConfig) {
 	esp.LP_AON_CLKRST.SetLP_AONCLKRST_HP_USB_CLKRST_CTRL1_LP_AONCLKRST_RST_EN_USB_OTG20(0)
 	// Enable the PHY reference clock (source 0 = XTAL, the reset default).
 	esp.LP_AON_CLKRST.SetLP_AONCLKRST_HP_USB_CLKRST_CTRL1_LP_AONCLKRST_USB_OTG20_PHYREF_CLK_EN(1)
-	// Short stabilisation delay (~5 µs at 360 MHz).
-	for i := 0; i < 2000; i++ {
-		_ = i
+	// Short stabilisation delay (~5 µs at 360 MHz) using CYCLE CSR.
+	{
+		start := uint(riscv.CYCLE.Get())
+		for uint(riscv.CYCLE.Get())-start < 2*cyclesPerMs {
+		}
 	}
 
 	// 1. Wait for AHB idle before touching the core (max ~50 ms).
-	for i := 0; i < 5000000; i++ {
-		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_AHBIDLE != 0 {
-			break
-		}
-	}
+	waitUntilOrTimeout(50, func() bool {
+		return dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_AHBIDLE != 0
+	})
 
 	// 2. Core soft reset. DWC v4.30a: wait for CSFTRSTDONE (bit 29), not CSFTRST clearing.
 	dwcReg(dwcGRSTCTL).SetBits(dwcGRSTCTL_CSFTRST)
-	for i := 0; i < 5000000; i++ {
-		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_CSFTRSTDONE != 0 {
-			break
-		}
-	}
+	waitUntilOrTimeout(50, func() bool {
+		return dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_CSFTRSTDONE != 0
+	})
 	dwcReg(dwcGRSTCTL).ClearBits(dwcGRSTCTL_CSFTRST)
 
 	// 3. Force device mode (GUSBCFG.FDMOD=1). Delay ≥ 25 ms for PHY mode change.
 	dwcReg(dwcGUSBCFG).SetBits(dwcGUSBCFG_FDMOD)
-	for i := 0; i < 200000; i++ {
-		_ = dwcReg(dwcGINTSTS).Get()
+	// Spin-delay ~25 ms using CYCLE CSR; reads are side-effecting so LLVM keeps the loop.
+	{
+		start := uint(riscv.CYCLE.Get())
+		for uint(riscv.CYCLE.Get())-start < 25*cyclesPerMs {
+		}
 	}
 
 	// 4. Configure FIFO sizes.
@@ -417,17 +438,13 @@ func (dev *USBDevice) Configure(config UARTConfig) {
 
 	// 5. Flush all TX FIFOs then the RX FIFO.
 	dwcReg(dwcGRSTCTL).Set(dwcGRSTCTL_TXFFLSH | (0x10 << 6)) // txfnum=0x10 → flush all
-	for i := 0; i < 1000000; i++ {
-		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_TXFFLSH == 0 {
-			break
-		}
-	}
+	waitUntilOrTimeout(50, func() bool {
+		return dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_TXFFLSH == 0
+	})
 	dwcReg(dwcGRSTCTL).Set(dwcGRSTCTL_RXFFLSH)
-	for i := 0; i < 1000000; i++ {
-		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_RXFFLSH == 0 {
-			break
-		}
-	}
+	waitUntilOrTimeout(50, func() bool {
+		return dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_RXFFLSH == 0
+	})
 
 	// 6. Device speed: Full Speed using HS PHY.
 	dwcReg(dwcDCFG).Set(dwcDCFG_DEVSPD_FS_HSPHY)
@@ -507,11 +524,9 @@ func handleUSBDWCIRQ() {
 // handleUSBReset handles a USB bus reset.
 func handleUSBReset() {
 	dwcReg(dwcGRSTCTL).Set(dwcGRSTCTL_TXFFLSH | (0x10 << 6))
-	for i := 0; i < 1000000; i++ {
-		if dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_TXFFLSH == 0 {
-			break
-		}
-	}
+	waitUntilOrTimeout(50, func() bool {
+		return dwcReg(dwcGRSTCTL).Get()&dwcGRSTCTL_TXFFLSH == 0
+	})
 	dwcReg(dwcDAINTMSK).Set((1 << 0) | (1 << 16))
 	dwcReg(dwcDIEPMSK).Set(1 << 0)
 	dwcReg(dwcDOEPMSK).Set((1 << 3) | (1 << 0))

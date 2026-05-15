@@ -9,11 +9,11 @@
     "esp"
   ],
   "code-model": "medium",
-  "binary-format": "esp32c3",
+  "binary-format": "esp32",
   "rtlib": "compiler-rt",
   "libc": "picolibc",
   "scheduler": "tasks",
-  "serial": "usb",
+  "serial": "uart",
   "default-stack-size": 8192,
   "ldflags": [
     "--wrap=malloc",
@@ -27,5 +27,5 @@
     "src/device/esp/esp32p4.S"
   ],
   "flash-method": "command",
-  "flash-command": "python3 -c \"import sys,hashlib,subprocess,tempfile,os; b=bytearray(open(sys.argv[2],'rb').read()); b[12]=18; b[13]=0; b[-32:]=hashlib.sha256(bytes(b[:-32])).digest() if b[23] else b[-32:]; fd,t=tempfile.mkstemp(suffix='.bin'); os.write(fd,bytes(b)); os.close(fd); r=subprocess.run(['esptool','--port',sys.argv[1],'write-flash','0x2000',t]); os.unlink(t); sys.exit(r.returncode)\" {port} {bin}"
+  "flash-command": "sh -c \"python3 /Users/atkini01/src/bmcpi/ESP32-P4-KVM/bundling/patch-esp32p4-image.py {bin} && espflasher -port {port} -chip esp32p4-rev1 -reset auto -offset 0x2000 {bin}\""
 }

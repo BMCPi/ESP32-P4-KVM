@@ -4,19 +4,16 @@
  *   - HP SRAM is unified (no separate IRAM/DRAM virtual address spaces):
  *     accessible at 0x4FF40000..0x4FFAEFC0 (~444KB, for chip rev ≥ v1.3).
  *     (0x4FF00000..0x4FF40000 is reserved for L2 cache with 256KB config.)
- *   - IROM and DROM are on SEPARATE address buses (unlike C3 where they share):
- *       IROM: 0x40000000 (instruction bus)
- *       DROM: 0x44000000 (data bus)
+ *   - IROM is on the instruction bus at 0x40000000.
  *   - The firmware binary is read from flash offset 0x2000 (not 0x0):
  *     the P4 ROM bootloader looks for the second-stage image at 0x2000.
  *   - The MMU still works in 64KB pages, so paddr%64KB == vaddr%64KB must hold.
  *
- * Because the binary lands at flash offset 0x2000, the dummy sections below
- * ensure the low 16 bits of every virtual address match the corresponding
- * flash physical address (required by the 64KB-page cache MMU).
- * esptool sorts ELF segments by virtual address, so the on-flash order is:
- *   IROM (0x40…) → DROM (0x44…) → SRAM (0x4FF…).
- * .text_dummy and .rodata_dummy account for this order.
+ * Note: The ROM bootloader (ECO2) only handles IROM (0x40000000) as a
+ * flash-mapped region. It does NOT correctly handle a separate DROM window
+ * (0x44000000) — it tries to DMA-copy DROM segments to that address, which
+ * crashes because 0x44000000 is read-only. To avoid this, .rodata is placed
+ * in SRAM alongside .data. Only .text lives in flash via IROM.
  */
 
 MEMORY
@@ -27,11 +24,8 @@ MEMORY
      */
     SRAM (rwx) : ORIGIN = 0x4FF40000, LENGTH = 0x6EFC0  /* ~444 KB */
 
-    /* Flash mapped via L2-cache MMU — instruction bus (separate from data bus!) */
+    /* Flash mapped via L2-cache MMU — instruction bus */
     IROM (rx)  : ORIGIN = 0x40000000, LENGTH = 64M
-
-    /* Flash mapped via L2-cache MMU — data bus */
-    DROM (r)   : ORIGIN = 0x44000000, LENGTH = 64M
 }
 
 ENTRY(call_start_cpu0)
@@ -46,9 +40,7 @@ SECTIONS
      *   [0x2000] image_header (0x18 bytes)
      *   [0x2018] IROM segment header (0x8 bytes)   ← FIRST (VMA 0x40…)
      *   [0x2020] IROM data (.text)
-     *   [0x2020+T] DROM segment header (0x8 bytes)  ← SECOND (VMA 0x44…)
-     *   [0x2028+T] DROM data (.rodata)
-     *   [0x2028+T+D] SRAM segments (.data, .init)   ← LAST  (VMA 0x4FF…)
+     *   [0x2020+T] SRAM segment header(s)           ← LAST  (VMA 0x4FF…)
      *
      * The cache MMU maps 64 KB pages linearly: virtual 0x40000000 + off
      * → flash physical off (with paddr=0 in Cache_FLASH_MMU_Set).
@@ -76,41 +68,15 @@ SECTIONS
         _irom_end = .;
     } > IROM
 
-    /* ── DROM: read-only data mapped via data-bus L2-cache MMU ──────────────
+    /* ── SRAM: stack, BSS, initialized data, read-only data, startup code ───
      *
-     * DROM comes after IROM in the binary (VMA 0x44… > 0x40…).
-     * Physical flash of DROM data = 0x2000 + 0x18 + 0x8 + SIZEOF(.text) + 0x8
-     *                             = 0x2028 + SIZEOF(.text)
-     * → DROM VMA must have low-16 = (0x2028 + SIZEOF(.text)) % 0x10000.
-     * → .rodata_dummy advances by 0x2028 + SIZEOF(.text)
-     *   (SIZEOF(.text) is a backward reference — .text was placed above).
-     */
-    .rodata_dummy (NOLOAD): ALIGN(4)
-    {
-        . += 0x2000;          /* flash base */
-        . += 0x18;            /* esp_image_header_t */
-        . += 0x8;             /* IROM segment header */
-        . += SIZEOF(.text);   /* IROM segment data */
-        . += 0x8;             /* DROM segment header */
-    } > DROM
-
-    /* Constant global variables — stored in DROM (accessed via data bus MMU). */
-    .rodata : ALIGN(4)
-    {
-        *(.rodata*)
-        *(.srodata*)
-        . = ALIGN(4);
-    } > DROM
-
-    /* ── SRAM: stack, BSS, initialized data, startup code ───────────────────
-     *
-     * These segments are physically copied by the ROM bootloader into SRAM
-     * at their load addresses (no cache/MMU mapping needed).
+     * All segments below are copied by the ROM bootloader into SRAM at their
+     * load addresses. .rodata is placed here (not in a separate DROM window)
+     * because the ECO2 ROM bootloader does not correctly handle the DROM
+     * window at 0x44000000.
      */
 
-    /* Stack at the bottom of SRAM.  Stack overflow corrupts the BSS section
-     * (readable in a debugger) rather than silently trashing arbitrary data.
-     */
+    /* Stack at the bottom of SRAM. */
     .stack (NOLOAD) :
     {
         . = ALIGN(16);
@@ -118,9 +84,7 @@ SECTIONS
         _stack_top = .;
     } > SRAM
 
-    /* Zero-initialized globals.  Zeroed by the TinyGo runtime at startup
-     * (NOT by the ROM bootloader, which only copies the loaded segments).
-     */
+    /* Zero-initialized globals. */
     .bss (NOLOAD) : ALIGN(4)
     {
         . = ALIGN(4);
@@ -132,25 +96,27 @@ SECTIONS
         _ebss = ABSOLUTE(.);
     } > SRAM
 
-    /* Initialized globals — loaded from flash into SRAM by the ROM bootloader. */
+    /* Initialized globals and read-only data — all in SRAM.
+     * .rodata is included here rather than in a DROM flash-mapped window
+     * because the ECO2 ROM does not support the 0x44000000 DROM bus.
+     */
     .data : ALIGN(4)
     {
         . = ALIGN(4);
         _sdata = ABSOLUTE(.);
         *(.sdata)
+        *(.sdata.*)
         *(.data .data.*)
         *(.dram*)
+        *(.rodata*)
+        *(.srodata*)
         . = ALIGN(4);
         _edata = ABSOLUTE(.);
-        /* _sidata points to _sdata so that preinit()'s .data copy is a no-op.
-         * The ROM bootloader already loads .data from flash into SRAM. */
+        /* _sidata == _sdata: ROM bootloader already loaded .data into SRAM. */
         _sidata = _sdata;
     } > SRAM
 
-    /* Startup code — loaded into SRAM by the ROM bootloader.
-     * After the startup sequence completes, __init_start...__init_end memory
-     * is reclaimed as heap (it is never called again).
-     */
+    /* Startup code — loaded into SRAM by the ROM bootloader. */
     .init : ALIGN(4)
     {
         __init_start = .;
@@ -158,41 +124,31 @@ SECTIONS
         __init_end = .;
     } > SRAM
 
-    /* For the GC: mark the flash-mapped DROM window.
-     * Convert from IROM address to equivalent DROM address (same flash page,
-     * different virtual bus).
-     */
-    PROVIDE(__flash_data_start = ALIGN(_irom_end - 0x40000000 + 0x44000000, 4096));
-    PROVIDE(__flash_data_end   = 0x44000000 + 4M);
+    /* No DROM flash-mapped data; rodata is in SRAM so GC covers it via
+     * _globals_start.._globals_end. Set flash data range to empty. */
+    PROVIDE(__flash_data_start = 0);
+    PROVIDE(__flash_data_end   = 0);
 
     /DISCARD/ :
     {
         *(.eh_frame)
     }
 
-    /* Sanity check: loaded SRAM content must fit before the ROM/bootloader
-     * loader segment boundary at 0x4FFAEFC0.
-     */
     ASSERT((_edata + SIZEOF(.init)) <= 0x4FFAEFC0,
-           "SRAM overflow: .data + .init are too large for the ESP32-P4 SRAM region")
+           "SRAM overflow: .data + .rodata + .init are too large for the ESP32-P4 SRAM region")
 }
 
 /* Symbols used by the TinyGo GC and runtime. */
 _globals_start = _sbss;
 _globals_end   = _edata;
-/* Heap starts right after the loaded data; the .init code bytes at
- * [_edata, _edata+SIZEOF(.init)) are reclaimed by the allocator once startup
- * is done (SIZEOF(.init) == __init_end - __init_start, so the expression
- * evaluates to _edata — the allocator just starts there and overwrites the
- * now-unused startup code).
- */
+/* Heap starts right after the loaded data (including reclaimed .init bytes). */
 _heap_start = _edata + SIZEOF(.init) - (__init_end - __init_start);
 _heap_end   = ORIGIN(SRAM) + LENGTH(SRAM);
 
 _stack_size = 8K;
 
 /* ─── ROM functions for cache / flash MMU setup ───────────────────────────
- * Addresses from esp32p4.rom.ld (compatible with ROM ECO ≥ 5).
+ * Addresses verified against esp32p4-eco2-20240710 ROM.
  */
 disable_default_watchdog = 0x4fc000a4;
 Cache_Invalidate_All     = 0x4fc00404;
