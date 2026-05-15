@@ -447,6 +447,15 @@ func (e *EMAC) Recv() []byte {
 	}
 	n := fl - 4 // strip FCS
 
+	// Guard against DMA writing a garbage frame length (e.g. spurious RMII
+	// noise when the PHY is not yet linked).  Discard and recycle the descriptor.
+	if n > emacFrameSize {
+		volatile.StoreUint32(&d.status, rdes0OWN)
+		e.rxIdx = (e.rxIdx + 1) % emacRxDescCount
+		emacDMAReg(emacDMARxPollDemand).Set(1)
+		return nil
+	}
+
 	buf := emacRxBufs[e.rxIdx][:n]
 
 	// Return descriptor to DMA immediately.
