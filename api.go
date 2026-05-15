@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -103,8 +104,16 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 		"PowerState": powerState,
 	}
 
+	var payload bytes.Buffer
+	if err := json.NewEncoder(&payload).Encode(response); err != nil {
+		fmt.Printf("failed to encode system status response: %s\n", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(payload.Bytes()); err != nil {
 		fmt.Printf("failed to write system status response: %s\n", err)
 		return
 	}
@@ -138,7 +147,9 @@ func startPowerActionWorker() {
 }
 
 func enqueuePowerAction(duration time.Duration) bool {
-	startPowerActionWorker()
+	if powerActionQueue == nil {
+		return false
+	}
 
 	select {
 	case powerActionQueue <- duration:
