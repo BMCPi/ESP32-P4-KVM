@@ -70,7 +70,7 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 	response := map[string]string{
 		"Id":         "1",
-		"Name":       "Raspberry Pi 5 Host",
+		"Name":       "Managed Host",
 		"PowerState": powerState,
 	}
 

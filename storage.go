@@ -31,7 +31,7 @@ func initStorage() error {
 		return fmt.Errorf("failed to configure SD card: %v", err)
 	}
 
-	fmt.Println("TF Card initialized successfully.")
+	fmt.Println("SD card initialized successfully.")
 
 	cfg.Frequency = 20000000
 	if err := spi.Configure(cfg); err != nil {

@@ -4,14 +4,14 @@ TinyGo firmware skeleton for ESP32-P4 ETH POE boards with:
 
 - Redfish-style HTTP API subset
 - GPIO-based host power control
-- TF (SD) card initialization for virtual media
+- SD card initialization for virtual media
 - Virtual media USB MSC bridge integration point
 
 ## Files
 
 - `main.go`: startup orchestration and GPIO/button logic
 - `api.go`: HTTP API handlers under `/redfish/v1/Systems/1`
-- `storage.go`: TF card initialization using `tinygo.org/x/drivers/sdcard`
+- `storage.go`: SD card initialization using `tinygo.org/x/drivers/sdcard`
 - `virtual_media.go`: USB MSC bridge stub for ESP-IDF TinyUSB integration
 
 ## Build and flash
