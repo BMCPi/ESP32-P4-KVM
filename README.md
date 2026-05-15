@@ -23,6 +23,18 @@ tinygo build -target esp32s3-generic -ldflags="-X main.configuredResetAuthToken=
 tinygo flash -target esp32s3-generic .
 ```
 
+### Feature target matrix
+
+| Feature | esp32s3-generic | rp2040 (pico) | atsamd51 | nrf52840 |
+|---------|----------------|---------------|----------|----------|
+| GPIO / HTTP API | ✓ | ✓ | ✓ | ✓ |
+| SD card (sdcard driver) | ✓ | ✓ | ✓ | ✓ |
+| LittleFS (`tinygo.org/x/tinyfs`) | ✗ (no `__wrap_malloc`) | ✓ | ✓ | ✓ |
+| USB MSC (`machine/usb/msc`) | ✗ (stub) | ✓ | ✓ | ✓ |
+
+The full virtual-media stack (LittleFS + USB MSC) compiles and runs on rp2040/pico.
+When an ESP32-P4 target is added to TinyGo, both features are expected to work.
+
 ## API examples
 
 ```bash

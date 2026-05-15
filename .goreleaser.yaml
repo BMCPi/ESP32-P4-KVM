@@ -1,0 +1,62 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - bash -c "echo '{{ .Version }}' > version"
+
+builds:
+  - id: server
+    env: ["CGO_ENABLED=0"]
+    main: ./cmd/server
+    binary: server/NanoKVM-Server
+    goos:
+      - linux
+    goarch:
+      - riscv64
+  - id: rpiboot
+    env: ["CGO_ENABLED=0"]
+    main: ./cmd/rpiboot
+    binary: system/usr/bin/rpiboot
+    goos:
+      - linux
+    goarch:
+      - riscv64
+
+upx:
+  - enabled: false
+
+archives:
+  - id: nanokvm
+    ids:
+      - server
+      - rpiboot
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}"
+    files:
+      - src: packaging/etc/init.d/*
+        dst: system/etc/init.d
+        info:
+          mode: 0755
+      - LICENSE
+      - README.md
+      - version
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: BMCPi
+    name: NanoKVM
+  draft: false
+  prerelease: auto
+  name_template: "{{ .Tag }}"
+  make_latest: true
+
+snapshot:
+  version_template: "{{ .Version }}-next"
+
+changelog:
+  disable: "{{ .IsSnapshot }}"
