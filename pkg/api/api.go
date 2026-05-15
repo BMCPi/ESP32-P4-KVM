@@ -1,6 +1,6 @@
 //go:build tinygo
 
-package main
+package api
 
 import (
 	"bytes"
@@ -13,6 +13,9 @@ import (
 
 	"github.com/tinywasm/fmt"
 	"tinygo.org/x/drivers/netlink"
+
+	"github.com/bmcpi/esp32-p4-kvm/pkg/ethernet"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/power"
 )
 
 type ResetRequest struct {
@@ -25,21 +28,27 @@ const (
 )
 
 var (
-	// Set at build time (for example with -ldflags "-X main.configuredResetAuthToken=<token>").
 	configuredResetAuthToken string
 	powerActionOnce          sync.Once
 	// Allow one queued command while one is executing; additional requests are rejected.
 	powerActionQueue = make(chan time.Duration, 1)
 )
 
-func startAPIServer() {
-	link, _ := Probe()
+// Configure sets the reset authentication token. Call this from main (where
+// the token is injected via -ldflags) before StartPowerActionWorker or
+// StartAPIServer.
+func Configure(token string) {
+	configuredResetAuthToken = token
+}
+
+func StartAPIServer() {
+	link, _ := ethernet.Probe()
 	if err := link.NetConnect(&netlink.ConnectParams{}); err != nil {
 		fmt.Printf("Network connect failed: %s\n", err)
 		return
 	}
 
-	go startSerialTerminal()
+	// go serial.StartSerialTerminal()
 
 	http.HandleFunc("/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", handlePowerReset)
 	http.HandleFunc("/redfish/v1/Systems/1", handleSystemStatus)
@@ -115,7 +124,7 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	powerState := "Off"
-	if !sensePin.Get() {
+	if !power.Sense.Get() {
 		powerState = "On"
 	}
 
@@ -171,12 +180,12 @@ func authorizePowerReset(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func startPowerActionWorker() {
+func StartPowerActionWorker() {
 	powerActionOnce.Do(func() {
 		go func() {
 			for duration := range powerActionQueue {
 				fmt.Printf("Executing power action for %s\n", duration)
-				pressButton(pwrButton, duration)
+				power.PressButton(power.Button, duration)
 			}
 		}()
 	})

@@ -11,7 +11,7 @@ import "machine/usb/msc"
 //
 // The tail partition (lfsDevice / LittleFS) is not exposed over MSC and
 // remains private to the ESP32 firmware.
-func startVirtualMedia() {
+func StartVirtualMedia() {
 	port := msc.Port(mscDevice)
 	port.SetVendorID("BMCPi")
 	port.SetProductID("KVM VirtualMedia")

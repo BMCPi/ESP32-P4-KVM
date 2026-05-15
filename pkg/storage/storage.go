@@ -61,7 +61,7 @@ func (p *PartitionDevice) EraseBlocks(start, count int64) error {
 	return rawCard.EraseBlocks(absStart, count)
 }
 
-func initStorage() error {
+func InitStorage() error {
 	spi := machine.SPI0
 
 	// Low frequency for SD card initialisation (≤400 kHz per SD spec).

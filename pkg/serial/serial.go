@@ -30,7 +30,7 @@ var serialUART = machine.UART1
 //
 // Note: machine.UART.Configure has no error return on some TinyGo targets
 // (e.g. ESP32), so errors are not propagated here.
-func initSerial() error {
+func InitSerial() error {
 	serialUART.Configure(machine.UARTConfig{
 		BaudRate: serialBaudRate,
 		TX:       serialTX,
@@ -45,7 +45,7 @@ func initSerial() error {
 //
 //	nc <bmc-ip> 2222
 //	socat - TCP:<bmc-ip>:2222
-func startSerialTerminal() {
+func StartSerialTerminal() {
 	ln, err := net.Listen("tcp", serialTCPPort)
 	if err != nil {
 		fmt.Printf("Serial terminal: listen %s: %s\n", serialTCPPort, err)

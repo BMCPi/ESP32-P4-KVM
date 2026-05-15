@@ -26,7 +26,7 @@ build-demo:
 cross-compile: build
 
 # Flash firmware to device (clean screen first, retry up to 10× for WDT boot-loop churn)
-flash: clean-screen
+flash: build clean-screen
 	@echo "Flashing ESP32-P4 firmware on $(CONSOLE_PORT)..."
 	@for i in $$(seq 1 10); do \
 		echo "Flash attempt $$i/10..."; \

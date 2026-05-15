@@ -1,27 +1,26 @@
 //go:build tinygo
 
-// Package main — EMAC netdev for ESP32-P4-ETH (Waveshare).
+// Package ethernet implements an EMAC-backed netdev/netlink for the ESP32-P4.
 //
 // The ESP32-P4 EMAC driver provides raw Ethernet frame TX/RX only; there is no
 // TCP/IP offload and no built-in netlink/probe implementation for Ethernet in
-// tinygo.org/x/drivers. This file implements the full stack needed to use the
-// standard net/http server on top of the raw EMAC:
+// tinygo.org/x/drivers. This package implements the full stack needed to use
+// the standard net/http server on top of the raw EMAC:
 //
-//   netdev.Netdever  (BSD socket API — L3/L4)
-//   netlink.Netlinker (L2 connect / MAC — L2)
+//	netdev.Netdever  (BSD socket API — L3/L4)
+//	netlink.Netlinker (L2 connect / MAC — L2)
 //
 // Static IP only; DHCP support can be added later.
 //
 // Usage (follows the webserver example pattern):
 //
-//	link, _ := Probe()
+//	link, _ := ethernet.Probe()
 //	link.NetConnect(&netlink.ConnectParams{})
 //	http.HandleFunc("/", handler)
 //	http.ListenAndServe(":80", nil)
 //
 // Note: increase stack size when using net/http: -stack-size=8KB
-
-package main
+package ethernet
 
 import (
 	"machine"
@@ -367,17 +366,17 @@ func (d *EMACNetdev) handleARP(frame []byte) []byte {
 		return nil
 	}
 	reply := make([]byte, 42)
-	copy(reply[0:6], arp[8:14])       // dst = sender MAC
-	copy(reply[6:12], d.mac[:])       // src = our MAC
+	copy(reply[0:6], arp[8:14])    // dst = sender MAC
+	copy(reply[6:12], d.mac[:])    // src = our MAC
 	pu16(reply[12:14], ethTypeARP)
-	pu16(reply[14:16], 1)             // HW type = Ethernet
-	pu16(reply[16:18], 0x0800)        // proto = IPv4
+	pu16(reply[14:16], 1)          // HW type = Ethernet
+	pu16(reply[16:18], 0x0800)     // proto = IPv4
 	reply[18], reply[19] = 6, 4
-	pu16(reply[20:22], 2)             // op = reply
-	copy(reply[22:28], d.mac[:])      // sender MAC = ours
-	copy(reply[28:32], d.ip[:])       // sender IP  = ours
-	copy(reply[32:38], arp[8:14])     // target MAC = requester
-	copy(reply[38:42], arp[14:18])    // target IP  = requester
+	pu16(reply[20:22], 2)          // op = reply
+	copy(reply[22:28], d.mac[:])   // sender MAC = ours
+	copy(reply[28:32], d.ip[:])    // sender IP  = ours
+	copy(reply[32:38], arp[8:14])  // target MAC = requester
+	copy(reply[38:42], arp[14:18]) // target IP  = requester
 	return reply
 }
 

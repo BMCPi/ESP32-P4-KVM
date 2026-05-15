@@ -3,22 +3,25 @@
 package main
 
 import (
-	"machine"
 	"time"
 	"unsafe"
+
+	"github.com/bmcpi/esp32-p4-kvm/pkg/api"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/power"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/serial"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/storage"
 )
 
 var (
-	pwrButton machine.Pin
-	sensePin  machine.Pin
+	// Set at build time (for example with -ldflags "-X main.configuredResetAuthToken=<token>").
+	configuredResetAuthToken string
 )
 
 const (
-	PinOutputModeGPOpenDrain machine.PinMode = 4
-	DR_REG_GPIO_BASE                         = 0x50110000                // P4 specific GPIO base
-	GPIO_OUT_W1TS                            = DR_REG_GPIO_BASE + 0x0008 // Set register
-	GPIO_OUT_W1TC                            = DR_REG_GPIO_BASE + 0x000C // Clear register
-	pplClockFreq                             = 80_000_000
+	DR_REG_GPIO_BASE = 0x50110000                // P4 specific GPIO base
+	GPIO_OUT_W1TS    = DR_REG_GPIO_BASE + 0x0008 // Set register
+	GPIO_OUT_W1TC    = DR_REG_GPIO_BASE + 0x000C // Clear register
+	pplClockFreq     = 80_000_000
 	// Define RMII / MAC registers here
 )
 
@@ -34,43 +37,31 @@ func main() {
 	println("Starting ESP32-P4 KVM Controller")
 
 	println("Setting up GPIO...")
-	setupGPIO()
+	power.Setup()
 	println("GPIO setup complete.")
 
+	api.Configure(configuredResetAuthToken)
+
 	println("Starting power action worker...")
-	startPowerActionWorker()
+	api.StartPowerActionWorker()
 	println("Power action worker started.")
 
 	println("Initializing storage...")
 
-	// if err := initStorage(); err != nil {
-	// 	println("Storage warning: Virtual Media unavailable -", err.Error())
-	// } else {
-	// 	startVirtualMedia()
-	// }
+	if err := storage.InitStorage(); err != nil {
+		println("Storage warning: Virtual Media unavailable -", err.Error())
+	} else {
+		storage.StartVirtualMedia()
+	}
 
-	// if err := initSerial(); err != nil {
-	// 	println("Serial warning:", err.Error())
-	// }
+	if err := serial.InitSerial(); err != nil {
+		println("Serial warning:", err.Error())
+	}
 
-	go startAPIServer()
+	go api.StartAPIServer()
 
 	for {
+		println("Main loop: running...")
 		time.Sleep(1 * time.Second)
 	}
-}
-
-func setupGPIO() {
-	pwrButton = machine.GPIO16
-	pwrButton.Configure(machine.PinConfig{Mode: PinOutputModeGPOpenDrain})
-	pwrButton.High()
-
-	sensePin = machine.GPIO17
-	sensePin.Configure(machine.PinConfig{Mode: machine.PinInput})
-}
-
-func pressButton(pin machine.Pin, duration time.Duration) {
-	pin.Low()
-	time.Sleep(duration)
-	pin.High()
 }
