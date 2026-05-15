@@ -18,13 +18,14 @@ type ResetRequest struct {
 }
 
 const (
-	resetActionTokenHeader   = "X-BMC-Reset-Token"
-	resetActionMaxBodyBytes  = 128
-	configuredResetAuthToken = ""
+	resetActionTokenHeader  = "X-BMC-Reset-Token"
+	resetActionMaxBodyBytes = 128
 )
 
 var (
-	powerActionOnce sync.Once
+	// Set at build time (for example with -ldflags "-X main.configuredResetAuthToken=<token>").
+	configuredResetAuthToken string
+	powerActionOnce          sync.Once
 	// Allow one queued command while one is executing; additional requests are rejected.
 	powerActionQueue = make(chan time.Duration, 1)
 )
@@ -85,7 +86,12 @@ func handlePowerReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
+	if err := json.NewEncoder(w).Encode(map[string]string{"Status": "Accepted"}); err != nil {
+		fmt.Printf("failed to write reset action response: %s\n", err)
+		return
+	}
 }
 
 func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +128,7 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 func authorizePowerReset(w http.ResponseWriter, r *http.Request) bool {
 	if configuredResetAuthToken == "" {
-		http.Error(w, "Reset action disabled", http.StatusForbidden)
+		http.NotFound(w, r)
 		return false
 	}
 

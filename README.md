@@ -17,7 +17,8 @@ TinyGo firmware skeleton for ESP32-P4 ETH POE boards with:
 ## Build and flash
 
 ```bash
-tinygo build -target esp32p4 -o firmware.bin .
+# Enable reset actions by setting a token at build time.
+tinygo build -target esp32p4 -ldflags="-X main.configuredResetAuthToken=change-me" -o firmware.bin .
 tinygo flash -target esp32p4 .
 ```
 
@@ -28,6 +29,7 @@ curl http://<board-ip>/redfish/v1/Systems/1
 
 curl -X POST \
   -H 'Content-Type: application/json' \
+  -H 'X-BMC-Reset-Token: change-me' \
   -d '{"ResetType":"ForceOff"}' \
   http://<board-ip>/redfish/v1/Systems/1/Actions/ComputerSystem.Reset
 ```
