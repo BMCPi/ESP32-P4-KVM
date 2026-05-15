@@ -11,14 +11,13 @@ This script rewrites the image header in place so that:
 
   * byte 12 (chip_id)    = 18  (ESP32-P4)
   * byte 13 (chip_rev)   = 0   (any/unspecified; ROM accepts when min_rev unset)
-  * byte 23 bit 0        = 0   (hash_appended cleared — disables ROM SHA-256
-                                verification, preventing HP_SYS_HP_WDT_RESET
-                                caused by the verify loop timing out on large
-                                images before call_start_cpu0 is reached)
+  * hash_appended (byte 23 bit 0) is kept at 1 so the ROM performs SHA-256
+    verification normally; the SHA-256 digest (last 32 bytes of the image) is
+    recomputed over the entire image minus the trailing hash so it matches.
 
-On ESP32-P4 ECO2, the TIMG0 WDT fires while the ROM verifies the SHA-256 of
-the full firmware image (~400 KB).  Clearing hash_appended makes the ROM skip
-verification entirely and jump directly to call_start_cpu0.
+The XOR checksum byte (at offset file_size-33, i.e. the byte immediately
+before the 32-byte hash) is computed over segment data only and is unaffected
+by changes to the 24-byte image header; it does not need to be updated.
 
 Usage:
     patch-esp32p4-image.py <path-to-firmware.bin>
@@ -32,6 +31,7 @@ for the canonical image header layout used here.
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -50,6 +50,11 @@ def patch(path: Path) -> bool:
             f"{path}: bad magic 0x{data[0]:02x} (expected 0x{IMAGE_MAGIC:02x})"
         )
 
+    # Ensure hash_appended=1 so the ROM verifies the SHA-256 we recompute below.
+    # TinyGo should always produce hash_appended=1; set it if somehow absent.
+    if not (data[23] & 0x01):
+        data[23] |= 0x01
+
     changed = False
     if data[12] != ESP32P4_CHIP_ID:
         data[12] = ESP32P4_CHIP_ID
@@ -58,13 +63,13 @@ def patch(path: Path) -> bool:
         data[13] = 0
         changed = True
 
-    # Clear hash_appended (byte 23 bit 0) so the ROM bootloader skips SHA-256
-    # verification.  On ESP32-P4 ECO2 the TIMG0 WDT fires during verification
-    # of large images before call_start_cpu0 is ever reached, causing an
-    # HP_SYS_HP_WDT_RESET boot loop.  The trailing 32 SHA bytes are left in
-    # the binary but become inert once the flag is cleared.
-    if data[23] & 0x01:
-        data[23] &= ~0x01
+    # Recompute the SHA-256 over the entire image except the trailing 32 bytes.
+    # The ROM verifies: sha256(image[:-32]) == image[-32:]
+    # The XOR checksum at image[-33] (one byte before the hash) covers only
+    # segment data bytes and is not affected by header-only changes.
+    new_hash = hashlib.sha256(bytes(data[:-HASH_LEN])).digest()
+    if bytes(data[-HASH_LEN:]) != new_hash:
+        data[-HASH_LEN:] = new_hash
         changed = True
 
     if changed:
@@ -78,7 +83,7 @@ def main(argv: list[str]) -> int:
         return 2
     path = Path(argv[1])
     changed = patch(path)
-    print(f"{'patched' if changed else 'already correct'}: {path} (chip_id=18)")
+    print(f"{'patched' if changed else 'already correct'}: {path} (chip_id=18, sha256 recomputed)")
     return 0
 
 

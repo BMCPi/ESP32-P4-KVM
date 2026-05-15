@@ -36,3 +36,4 @@ version
 out
 firmware.bin
 demo
+.data

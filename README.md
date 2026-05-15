@@ -19,7 +19,7 @@ TinyGo firmware skeleton for ESP32-P4 ETH POE boards with:
 ```bash
 # TinyGo 0.41.1 does not include an `esp32p4` target yet.
 # Use a concrete ESP32 target that exists in your TinyGo install.
-tinygo build -target esp32p4 -ldflags="-X main.configuredResetAuthToken=change-me" -o firmware.bin .
+tinygo build -target esp32p4 -ldflags="-X api.configuredResetAuthToken=change-me" -o firmware.bin .
 tinygo flash -target esp32p4 .
 ```
 

@@ -9,7 +9,7 @@
 ### Build Firmware
 ```bash
 # Requires TinyGo 0.41.1+
-tinygo build -target esp32p4 -ldflags="-X main.configuredResetAuthToken=change-me" -o firmware.bin .
+tinygo build -target esp32p4 -ldflags="-X api.configuredResetAuthToken=change-me" -o firmware.bin .
 ```
 
 ### Flash to Device
@@ -98,7 +98,7 @@ curl http://<device-ip>/redfish/v1/Systems/1
 
 ### Authentication
 - Reset endpoint requires `X-BMC-Reset-Token` header
-- Token configured at build time: `-X main.configuredResetAuthToken=<token>`
+- Token configured at build time: `-X api.configuredResetAuthToken=<token>`
 - Empty token disables reset action (returns 503)
 - Comparison uses `crypto/subtle.ConstantTimeCompare`
 
@@ -119,7 +119,7 @@ curl http://<device-ip>/redfish/v1/Systems/1
 ## Build Configuration
 
 ### ldflags Variables
-- `main.configuredResetAuthToken`: authentication token for the reset endpoint
+- `api.configuredResetAuthToken`: authentication token for the reset endpoint
 
 ### Go Module
 - TinyGo 0.41.1+

@@ -6,15 +6,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/bmcpi/esp32-p4-kvm/pkg/api"
-	"github.com/bmcpi/esp32-p4-kvm/pkg/power"
-	"github.com/bmcpi/esp32-p4-kvm/pkg/serial"
-	"github.com/bmcpi/esp32-p4-kvm/pkg/storage"
-)
-
-var (
-	// Set at build time (for example with -ldflags "-X main.configuredResetAuthToken=<token>").
-	configuredResetAuthToken string
+	// "github.com/bmcpi/esp32-p4-kvm/pkg/api"
+	// "github.com/bmcpi/esp32-p4-kvm/pkg/power"
+  "github.com/bmcpi/esp32-p4-kvm/pkg/serial"
 )
 
 const (
@@ -37,28 +31,26 @@ func main() {
 	println("Starting ESP32-P4 KVM Controller")
 
 	println("Setting up GPIO...")
-	power.Setup()
+	// power.Setup()
 	println("GPIO setup complete.")
 
-	api.Configure(configuredResetAuthToken)
-
 	println("Starting power action worker...")
-	api.StartPowerActionWorker()
+	// api.StartPowerActionWorker()
 	println("Power action worker started.")
 
 	println("Initializing storage...")
 
-	if err := storage.InitStorage(); err != nil {
-		println("Storage warning: Virtual Media unavailable -", err.Error())
-	} else {
-		storage.StartVirtualMedia()
-	}
+	// if err := storage.InitStorage(); err != nil {
+	// 	println("Storage warning: Virtual Media unavailable -", err.Error())
+	// } else {
+	// 	storage.StartVirtualMedia()
+	// }
 
 	if err := serial.InitSerial(); err != nil {
 		println("Serial warning:", err.Error())
 	}
 
-	go api.StartAPIServer()
+	// go api.StartAPIServer()
 
 	for {
 		println("Main loop: running...")

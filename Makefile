@@ -12,7 +12,7 @@ clean-screen:
 # Build firmware with TinyGo and patch the image header
 build:
 	@echo "Building ESP32-P4 firmware..."
-	tinygo build -target esp32p4 -ldflags="-X main.configuredResetAuthToken=change-me" -o firmware.bin .
+	tinygo build -target esp32p4 -ldflags="-X api.configuredResetAuthToken=change-me" -o firmware.bin .
 	@echo "Patching image header (chip_id=18, hash_appended=0)..."
 	python3 bundling/patch-esp32p4-image.py firmware.bin
 

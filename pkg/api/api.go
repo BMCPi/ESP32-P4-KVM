@@ -28,6 +28,7 @@ const (
 )
 
 var (
+  // Set at build time (for example with -ldflags "-X api.configuredResetAuthToken=<token>").
 	configuredResetAuthToken string
 	powerActionOnce          sync.Once
 	// Allow one queued command while one is executing; additional requests are rejected.
