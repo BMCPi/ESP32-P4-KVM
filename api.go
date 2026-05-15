@@ -6,11 +6,12 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/tinywasm/fmt"
 )
 
 type ResetRequest struct {
@@ -40,6 +41,8 @@ func startAPIServer() {
 
 	http.HandleFunc("/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", handlePowerReset)
 	http.HandleFunc("/redfish/v1/Systems/1", handleSystemStatus)
+	http.HandleFunc("/healthz", handleHealthz)
+	http.HandleFunc("/", handleNotFound)
 
 	fmt.Println("BMC API starting on port 80...")
 	if err := http.ListenAndServe(":80", nil); err != nil {
@@ -133,6 +136,22 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("failed to write system status response: %s\n", err)
 		return
 	}
+}
+
+func handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+		fmt.Printf("failed to write healthz response: %s\n", err)
+	}
+}
+
+func handleNotFound(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "Not Found", http.StatusNotFound)
 }
 
 func authorizePowerReset(w http.ResponseWriter, r *http.Request) bool {

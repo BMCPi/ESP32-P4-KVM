@@ -3,10 +3,11 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"machine"
 	"net"
+
+	"github.com/tinywasm/fmt"
 )
 
 const (

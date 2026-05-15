@@ -3,10 +3,11 @@
 package main
 
 import (
-	"fmt"
 	"machine"
 	"net"
 	"time"
+
+	"github.com/tinywasm/fmt"
 )
 
 func initEthernet() error {

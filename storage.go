@@ -3,8 +3,9 @@
 package main
 
 import (
-	"fmt"
 	"machine"
+
+	"github.com/tinywasm/fmt"
 
 	"tinygo.org/x/drivers/sdcard"
 )
@@ -71,25 +72,25 @@ func initStorage() error {
 		SDI:       machine.GPIO13,
 	}
 	if err := spi.Configure(cfg); err != nil {
-		return fmt.Errorf("SPI configure: %w", err)
+		return fmt.Errf("SPI configure: %w", err)
 	}
 
 	bd := sdcard.New(spi, machine.GPIO10, machine.GPIO12, machine.GPIO11, machine.GPIO13)
 	rawCard = &bd
 
 	if err := rawCard.Configure(); err != nil {
-		return fmt.Errorf("SD card configure: %w", err)
+		return fmt.Errf("SD card configure: %w", err)
 	}
 
 	// Switch to high-speed clock after successful card init.
 	cfg.Frequency = 20_000_000
 	if err := spi.Configure(cfg); err != nil {
-		return fmt.Errorf("SPI high-speed configure: %w", err)
+		return fmt.Errf("SPI high-speed configure: %w", err)
 	}
 
 	totalSize := rawCard.Size()
 	if totalSize <= lfsPartitionSize {
-		return fmt.Errorf("SD card too small (%d bytes); need > %d", totalSize, lfsPartitionSize)
+		return fmt.Errf("SD card too small (%d bytes); need > %d", totalSize, lfsPartitionSize)
 	}
 
 	// Front of card → remote machine via USB-C MSC.

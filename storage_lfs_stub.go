@@ -1,8 +1,8 @@
-//go:build tinygo && !(rp2040 || rp2350 || atsamd51 || atsamd21 || nrf52840)
+//go:build tinygo && !(rp2040 || rp2350 || atsamd51 || atsamd21 || nrf52840 || esp32p4)
 
 package main
 
-import "fmt"
+import "github.com/tinywasm/fmt"
 
 // mountFilesystem is a stub for targets where tinygo.org/x/tinyfs/littlefs
 // cannot be linked (e.g. ESP32-S3) because TinyGo does not provide the
@@ -17,5 +17,5 @@ func mountFilesystem() error {
 // readPayload is a stub; payload reads require LittleFS which is unavailable
 // on this target.
 func readPayload(name string) ([]byte, error) {
-	return nil, fmt.Errorf("readPayload: LittleFS not supported on this target")
+	return nil, fmt.Errf("readPayload: LittleFS not supported on this target")
 }

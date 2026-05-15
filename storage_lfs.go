@@ -3,7 +3,7 @@
 package main
 
 import (
-	"fmt"
+	"github.com/tinywasm/fmt"
 
 	"tinygo.org/x/tinyfs/littlefs"
 )
@@ -21,10 +21,10 @@ func mountFilesystem() error {
 	if err := filesystem.Mount(); err != nil {
 		fmt.Println("LittleFS mount failed, formatting:", err)
 		if fmtErr := filesystem.Format(); fmtErr != nil {
-			return fmt.Errorf("LittleFS format: %w", fmtErr)
+			return fmt.Errf("LittleFS format: %w", fmtErr)
 		}
 		if err := filesystem.Mount(); err != nil {
-			return fmt.Errorf("LittleFS mount after format: %w", err)
+			return fmt.Errf("LittleFS mount after format: %w", err)
 		}
 	}
 	fmt.Println("Storage ready (SD card + LittleFS).")
@@ -36,22 +36,22 @@ func mountFilesystem() error {
 // embedded filesystem.
 func readPayload(name string) ([]byte, error) {
 	if filesystem == nil {
-		return nil, fmt.Errorf("filesystem not mounted")
+		return nil, fmt.Errf("filesystem not mounted")
 	}
 	f, err := filesystem.Open(name)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", name, err)
+		return nil, fmt.Errf("open %s: %w", name, err)
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("stat %s: %w", name, err)
+		return nil, fmt.Errf("stat %s: %w", name, err)
 	}
 
 	buf := make([]byte, info.Size())
 	if _, err := f.Read(buf); err != nil {
-		return nil, fmt.Errorf("read %s: %w", name, err)
+		return nil, fmt.Errf("read %s: %w", name, err)
 	}
 	return buf, nil
 }

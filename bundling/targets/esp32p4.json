@@ -5,6 +5,11 @@
   "build-tags": [
     "esp32p4"
   ],
-  "flash-method": "esptool",
-  "code-model": "medium"
+  "code-model": "medium",
+  "linkerscript": "targets/esp32p4.ld",
+  "extra-files": [
+    "src/device/esp/esp32p4.S"
+  ],
+  "flash-method": "command",
+  "flash-command": "python3 -c \"import sys,hashlib,subprocess,tempfile,os; b=bytearray(open(sys.argv[2],'rb').read()); b[12]=18; b[13]=0; b[-32:]=hashlib.sha256(bytes(b[:-32])).digest() if b[23] else b[-32:]; fd,t=tempfile.mkstemp(suffix='.bin'); os.write(fd,bytes(b)); os.close(fd); r=subprocess.run(['esptool','--port',sys.argv[1],'write-flash','0x2000',t]); os.unlink(t); sys.exit(r.returncode)\" {port} {bin}"
 }
