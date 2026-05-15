@@ -86,9 +86,16 @@ func handlePowerReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var payload bytes.Buffer
+	if err := json.NewEncoder(&payload).Encode(map[string]string{"Status": "Accepted"}); err != nil {
+		fmt.Printf("failed to encode reset action response: %s\n", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	if err := json.NewEncoder(w).Encode(map[string]string{"Status": "Accepted"}); err != nil {
+	if _, err := w.Write(payload.Bytes()); err != nil {
 		fmt.Printf("failed to write reset action response: %s\n", err)
 		return
 	}
@@ -128,7 +135,7 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 func authorizePowerReset(w http.ResponseWriter, r *http.Request) bool {
 	if configuredResetAuthToken == "" {
-		http.NotFound(w, r)
+		http.Error(w, "Reset action disabled", http.StatusServiceUnavailable)
 		return false
 	}
 
