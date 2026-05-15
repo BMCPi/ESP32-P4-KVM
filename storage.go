@@ -33,6 +33,8 @@ func initStorage() error {
 
 	fmt.Println("SD card initialized successfully.")
 
+	// SD cards are initialized at a conservative clock and then switched to a
+	// higher transfer rate for normal block operations.
 	cfg.Frequency = 20000000
 	if err := spi.Configure(cfg); err != nil {
 		return err
