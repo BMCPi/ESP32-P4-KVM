@@ -33,8 +33,9 @@ TINYGO_ROOT  ?= $(shell tinygo env TINYGOROOT)
 apply-overrides:
 	@if [ -z "$(TINYGO_ROOT)" ]; then echo "TinyGo not found on PATH"; exit 1; fi
 	@echo "Patching TinyGo install at $(TINYGO_ROOT)..."
-	@install -m 644 bundling/src/device/esp/esp32p4.S      "$(TINYGO_ROOT)/src/device/esp/esp32p4.S"
-	@install -m 644 bundling/targets/esp32p4.ld            "$(TINYGO_ROOT)/targets/esp32p4.ld"
+	@install -m 644 bundling/src/device/esp/esp32p4.S       "$(TINYGO_ROOT)/src/device/esp/esp32p4.S"
+	@install -m 644 bundling/targets/esp32p4.ld             "$(TINYGO_ROOT)/targets/esp32p4.ld"
+	@install -m 644 bundling/targets/esp32p4.json           "$(TINYGO_ROOT)/targets/esp32p4.json"
 	@install -m 644 bundling/src/runtime/runtime_esp32p4.go "$(TINYGO_ROOT)/src/runtime/runtime_esp32p4.go"
 
 # Clean up ALL screen sessions (Attached or Detached) to free serial port
@@ -49,7 +50,9 @@ clean-screen:
 # crashes the ESP32-P4 ECO2 ROM bootloader.
 build: apply-overrides
 	@echo "Building ESP32-P4 firmware (ELF)..."
-	tinygo build -target esp32p4 -ldflags="-X api.configuredResetAuthToken=change-me" -o firmware.elf .
+	tinygo build -target esp32p4 -opt=z -no-debug \
+	  -ldflags="-X api.configuredResetAuthToken=change-me" \
+	  -o firmware.elf .
 	@echo "Converting ELF to ESP32-P4 image..."
 	.venv/bin/python bundling/flash-esp32p4.py firmware.elf --image-only firmware.bin
 

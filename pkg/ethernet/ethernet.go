@@ -120,6 +120,77 @@ func Probe() (netlink.Netlinker, netdev.Netdever) {
 	return emacNetdev, emacNetdev
 }
 
+// ── Lightweight TCP Listener / Conn API ──────────────────────────────────────
+// Exposed so callers (e.g. the BMC API server) can do raw TCP without
+// dragging in the standard `net` and `net/http` packages, which together
+// link ~250 KB of code on TinyGo (mime, crypto/tls, crypto/x509, etc.).
+//
+// The Conn and Listener types are intentionally small mirrors of the
+// net.Conn / net.Listener method sets — drop-in for callers that only need
+// Read/Write/Close — but they live entirely inside this package and route
+// through EMACNetdev's BSD-socket implementation directly.
+
+// Listener represents a TCP socket bound to a local port and waiting for
+// connections.  Created by Listen.
+type Listener struct {
+	fd int
+	nd *EMACNetdev
+}
+
+// Conn represents one established TCP connection accepted by a Listener.
+type Conn struct {
+	fd     int
+	nd     *EMACNetdev
+	remote netip.AddrPort
+}
+
+// Listen creates a TCP socket bound to *port* on the local IP and starts
+// accepting connections (backlog 4).  NetConnect must have been called first.
+func Listen(port uint16) (*Listener, error) {
+	fd, err := emacNetdev.Socket(netdev.AF_INET, netdev.SOCK_STREAM, netdev.IPPROTO_TCP)
+	if err != nil {
+		return nil, err
+	}
+	if err := emacNetdev.Bind(fd, netip.AddrPortFrom(emacNetdev.ipAddr, port)); err != nil {
+		_ = emacNetdev.Close(fd)
+		return nil, err
+	}
+	if err := emacNetdev.Listen(fd, 4); err != nil {
+		_ = emacNetdev.Close(fd)
+		return nil, err
+	}
+	return &Listener{fd: fd, nd: emacNetdev}, nil
+}
+
+// Accept blocks until a peer connects, then returns the new connection.
+func (l *Listener) Accept() (*Conn, error) {
+	newFD, remote, err := l.nd.Accept(l.fd)
+	if err != nil {
+		return nil, err
+	}
+	return &Conn{fd: newFD, nd: l.nd, remote: remote}, nil
+}
+
+// Close stops accepting new connections.
+func (l *Listener) Close() error { return l.nd.Close(l.fd) }
+
+// Read implements io.Reader.  Returns 0,nil if no data is available without
+// blocking? No — this blocks until data arrives or the peer closes.
+func (c *Conn) Read(buf []byte) (int, error) {
+	return c.nd.Recv(c.fd, buf, 0, time.Time{})
+}
+
+// Write implements io.Writer.
+func (c *Conn) Write(buf []byte) (int, error) {
+	return c.nd.Send(c.fd, buf, 0, time.Time{})
+}
+
+// Close releases the socket and sends a FIN to the peer.
+func (c *Conn) Close() error { return c.nd.Close(c.fd) }
+
+// RemoteAddr returns the peer's IP:port.
+func (c *Conn) RemoteAddr() netip.AddrPort { return c.remote }
+
 // ── netlink.Netlinker ─────────────────────────────────────────────────────────
 
 // NetConnect initialises the EMAC hardware and starts the frame-dispatch

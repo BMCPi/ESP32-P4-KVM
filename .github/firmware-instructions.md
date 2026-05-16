@@ -1,6 +1,6 @@
 # Firmware Boot — ESP32-P4 ECO2
 
-## Status: Booting ✅ (as of 2026-05-15)
+## Status: Booting ✅ + BMC API up (as of 2026-05-16)
 
 The firmware boots cleanly from flash, runs through `_start`, executes
 `main.main`, and enters its main loop without crashing.  A representative
@@ -17,10 +17,14 @@ SM                                        ← call_start_cpu0 diagnostic markers
 Starting ESP32-P4 KVM Controller
 Setting up GPIO...
 GPIO setup complete.
+Starting power action worker...
+Power action worker started.
 Initializing storage...
 Storage warning: Virtual Media unavailable - SD card configure:
+Starting API server...
 Main loop: running...
-Main loop: running...
+EMAC: link DOWN (no PHY or cable?)
+BMC API listening on :80
 ```
 
 ---
@@ -122,6 +126,56 @@ upstream path.  No more per-iteration allocation, GC stays healthy,
 and the driver returns `0xFF` to the caller which surfaces as
 `fmt.Errorf("no SD card")` → handled by the optional-feature path in
 [main.go](../main.go).
+
+### 6. ROM watchdog hung on large binaries (>~250 KB IROM)
+
+**Symptom:** With the full `pkg/api` (net/http + encoding/json + crypto/tls
+transitive deps) linked, the resulting binary was ~518 KB and the
+device entered an infinite reset loop printing only
+`load:0x40002020,len:0x60f1c` before `HP_SYS_HP_WDT_RESET` fired.  Our
+code never ran.  The ROM's built-in watchdog times out before it
+finishes processing a large IROM segment (likely SHA-256 verification
+and per-segment checksum reads, both at the slow boot clock).  Without
+a second-stage bootloader we cannot disable this WDT.
+
+**Fix — replace heavy stdlib packages with TinyGo-friendly equivalents:**
+
+- `encoding/json` (reflection-based) → `protobuf-go-lite` generated
+  `MarshalJSON` / `UnmarshalJSON` ([pkg/api/proto/](../pkg/api/proto/)) —
+  saves **~50 KB** of IROM.
+- `crypto/subtle.ConstantTimeCompare` → hand-rolled XOR-fold loop in
+  [pkg/api/api.go](../pkg/api/api.go) — drops the
+  `crypto/internal/fips140` self-test chain, saving **~30 KB**.
+- `net/http` (Server, Mux, Request, …) → minimal HTTP/1.1 server in
+  [pkg/api/api.go](../pkg/api/api.go) on top of `ethernet.Listen/Accept`
+  ([pkg/ethernet/ethernet.go](../pkg/ethernet/ethernet.go)) — drops
+  mime, crypto/tls, crypto/x509, asn1, and the matching ROM FP
+  helpers, saving **~200 KB**.
+
+Combined, the binary shrank from **518 KB → 156 KB** (70% smaller) and
+the ROM boots it without WDT problems.
+
+The protobuf workflow:
+
+```bash
+go install github.com/aperturerobotics/protobuf-go-lite/cmd/protoc-gen-go-lite@latest
+protoc \
+  --plugin=protoc-gen-go-lite=$(go env GOPATH)/bin/protoc-gen-go-lite \
+  --go-lite_out=. \
+  --go-lite_opt=features=marshal+unmarshal+size+equal+clone+json,paths=source_relative \
+  pkg/api/proto/bmc.proto
+```
+
+API definitions live in [pkg/api/proto/bmc.proto](../pkg/api/proto/bmc.proto);
+regenerate after every schema change.  The `json_name` annotations keep
+the wire format Redfish-compatible (`ResetType`, `PowerState`, …).
+
+### gRPC is deferred
+
+A future iteration could add gRPC by layering [aperturerobotics/starpc](https://github.com/aperturerobotics/starpc)
+on top of `ethernet.Listener`, but full HTTP/2 + gRPC framing would
+exceed the current binary budget.  starpc over a plain TCP transport
+or WebSocket is the most likely path if/when needed.
 
 ---
 

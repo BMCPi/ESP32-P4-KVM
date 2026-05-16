@@ -6,10 +6,10 @@ import (
 	"time"
 	"unsafe"
 
-	// "github.com/bmcpi/esp32-p4-kvm/pkg/api"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/api"
 	"github.com/bmcpi/esp32-p4-kvm/pkg/power"
-  "github.com/bmcpi/esp32-p4-kvm/pkg/serial"
-  "github.com/bmcpi/esp32-p4-kvm/pkg/storage"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/serial"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/storage"
 )
 
 const (
@@ -35,9 +35,9 @@ func main() {
 	power.Setup()
 	println("GPIO setup complete.")
 
-	// println("Starting power action worker...")
-	// api.StartPowerActionWorker()
-	// println("Power action worker started.")
+	println("Starting power action worker...")
+	api.StartPowerActionWorker()
+	println("Power action worker started.")
 
 	println("Initializing storage...")
 
@@ -51,7 +51,8 @@ func main() {
 		println("Serial warning:", err.Error())
 	}
 
-	// go api.StartAPIServer()
+	println("Starting API server...")
+	go api.StartAPIServer()
 
 	for {
 		println("Main loop: running...")

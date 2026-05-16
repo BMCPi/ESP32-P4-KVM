@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+// BMC API for ESP32-P4-KVM.  Schemas are kept small intentionally — TinyGo
+// links the JSON marshal/unmarshal code statically, so every field adds
+// flash bytes.  Field numbers are stable across releases.
+//
+// Generated bindings live in this same directory and are produced by
+// `protoc-gen-go-lite` (no reflection, no encoding/json).
+package bmc;
+
+option go_package = "github.com/bmcpi/esp32-p4-kvm/pkg/api/proto";
+
+// ResetRequest is the body of POST
+// /redfish/v1/Systems/1/Actions/ComputerSystem.Reset
+//
+// `reset_type` matches the Redfish `ResetType` enumeration values so the JSON
+// wire format stays Redfish-compatible (the JSON field is "ResetType" via the
+// protobuf-go-lite JSON-name convention).
+message ResetRequest {
+  string reset_type = 1 [json_name = "ResetType"];
+}
+
+// ResetResponse is returned with HTTP 202 after a reset action is enqueued.
+message ResetResponse {
+  string status = 1 [json_name = "Status"];
+}
+
+// SystemStatus is the body of GET /redfish/v1/Systems/1
+message SystemStatus {
+  string id = 1          [json_name = "Id"];
+  string name = 2        [json_name = "Name"];
+  string power_state = 3 [json_name = "PowerState"];
+}
+
+// Healthz is the body of GET /healthz
+message Healthz {
+  string status = 1 [json_name = "status"];
+}
+
+// ErrorResponse is the body of any non-2xx response.
+message ErrorResponse {
+  string error = 1 [json_name = "error"];
+}
