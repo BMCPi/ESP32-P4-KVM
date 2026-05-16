@@ -9,18 +9,21 @@ clean-screen:
 	sudo screen -wipe || true
 	sudo screen -ls | grep -E 'Attached|Detached' | cut -d. -f1 | awk '{print $$1}' | xargs -I {} sudo screen -X -S {} quit || true
 
-# Build firmware with TinyGo (ELF output) and convert to flashable .bin via esptool
+# Build firmware with TinyGo (ELF output) and convert to flashable .bin.
+# Uses bundling/flash-esp32p4.py (custom converter) instead of esptool's
+# built-in elf2image, which emits a zero-address alignment-pad segment that
+# crashes the ESP32-P4 ECO2 ROM bootloader.
 build:
 	@echo "Building ESP32-P4 firmware (ELF)..."
 	tinygo build -target esp32p4 -ldflags="-X api.configuredResetAuthToken=change-me" -o firmware.elf .
 	@echo "Converting ELF to ESP32-P4 image..."
-	esptool --chip esp32p4 elf2image -o firmware.bin firmware.elf
+	.venv/bin/python bundling/flash-esp32p4.py firmware.elf --image-only firmware.bin
 
 build-demo:
 	@echo "Building ESP32-P4 demo firmware (ELF)..."
 	tinygo build -target esp32p4 -o demo.elf ./cmd/demo
 	@echo "Converting ELF to ESP32-P4 image..."
-	esptool --chip esp32p4 elf2image -o demo.bin demo.elf
+	.venv/bin/python bundling/flash-esp32p4.py demo.elf --image-only demo.bin
 
 # Alias for build (cross-compile for consistency with workspace tasks)
 cross-compile: build
@@ -31,7 +34,7 @@ flash: build clean-screen
 	@echo "Flashing ESP32-P4 firmware on $(CONSOLE_PORT)..."
 	@for i in $$(seq 1 10); do \
 		echo "Flash attempt $$i/10..."; \
-		esptool --chip esp32p4 --port $(CONSOLE_PORT) write_flash -z 0x10000 firmware.bin && exit 0; \
+		.venv/bin/python bundling/flash-esp32p4.py firmware.elf $(CONSOLE_PORT) && exit 0; \
 		echo "Attempt $$i failed, retrying in 1s..."; \
 		sleep 1; \
 	done; exit 1
@@ -41,7 +44,7 @@ flash-demo: build-demo clean-screen
 	@echo "Flashing ESP32-P4 demo firmware on $(CONSOLE_PORT)..."
 	@for i in $$(seq 1 10); do \
 		echo "Flash attempt $$i/10..."; \
-		esptool --chip esp32p4 --port $(CONSOLE_PORT) write_flash -z 0x10000 demo.bin && exit 0; \
+		.venv/bin/python bundling/flash-esp32p4.py demo.elf $(CONSOLE_PORT) && exit 0; \
 		echo "Attempt $$i failed, retrying in 1s..."; \
 		sleep 1; \
 	done; exit 1

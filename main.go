@@ -6,9 +6,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/bmcpi/esp32-p4-kvm/pkg/api"
+	// "github.com/bmcpi/esp32-p4-kvm/pkg/api"
 	"github.com/bmcpi/esp32-p4-kvm/pkg/power"
   "github.com/bmcpi/esp32-p4-kvm/pkg/serial"
+  "github.com/bmcpi/esp32-p4-kvm/pkg/storage"
 )
 
 const (
@@ -34,17 +35,17 @@ func main() {
 	power.Setup()
 	println("GPIO setup complete.")
 
-	println("Starting power action worker...")
-	api.StartPowerActionWorker()
-	println("Power action worker started.")
+	// println("Starting power action worker...")
+	// api.StartPowerActionWorker()
+	// println("Power action worker started.")
 
 	println("Initializing storage...")
 
-	// if err := storage.InitStorage(); err != nil {
-	// 	println("Storage warning: Virtual Media unavailable -", err.Error())
-	// } else {
-	// 	storage.StartVirtualMedia()
-	// }
+	if err := storage.InitStorage(); err != nil {
+		println("Storage warning: Virtual Media unavailable -", err.Error())
+	} else {
+		storage.StartVirtualMedia()
+	}
 
 	if err := serial.InitSerial(); err != nil {
 		println("Serial warning:", err.Error())

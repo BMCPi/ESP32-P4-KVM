@@ -17,6 +17,19 @@ import (
 //
 //export main
 func main() {
+	// rawput writes a single byte directly to the UART0 TX FIFO (base
+	// 0x500ca000, FIFO at offset 0x0).  Used for pre-runtime diagnostics
+	// only — bypasses all Go serial infrastructure so it works even before
+	// machine.InitSerial().
+	rawput := func(c byte) {
+		// Wait until FIFO has room: STATUS[23:16] = TX occupancy (0-128).
+		for (*(*uint32)(unsafe.Pointer(uintptr(0x500ca01c))))>>16&0xFF >= 127 {
+		}
+		*(*uint32)(unsafe.Pointer(uintptr(0x500ca000))) = uint32(c)
+	}
+	rawput('\n')
+	rawput('>')  // marker: runtime main() entered
+
 	// Disable ALL watchdog timers. disable_default_watchdog (called by
 	// call_start_cpu0) should handle most, but we explicitly kill every
 	// WDT to be certain — some may survive the ROM call.
@@ -40,19 +53,24 @@ func main() {
 	esp.LP_WDT.SWD_WPROTECT.Set(0x50D83AA1)
 	esp.LP_WDT.SetSWD_CONFIG_SWD_DISABLE(1)
 	esp.LP_WDT.SWD_WPROTECT.Set(0)
+	rawput('W') // marker: WDTs disabled
 
 	// Clear .bss and copy .data.
 	preinit()
+	rawput('B') // marker: preinit (BSS zero + data copy) done
 
 	// Set the interrupt address (vectored mode: bit[1:0]=1).
 	// The _vector_table is 256-byte aligned (see esp32p4.S).
 	riscv.MTVEC.Set((uintptr(unsafe.Pointer(&_vector_table))) | 1)
+	rawput('V') // marker: MTVEC set
 
 	// Initialize main system timer used for time.Now / time.Sleep.
 	initTimer()
+	rawput('T') // marker: timer started
 
 	// Initialize timer alarm interrupt for the scheduler.
 	initTimerInterrupt()
+	rawput('I') // marker: timer interrupt enabled
 
 	// Initialize the heap, call main.main, etc.
 	run()

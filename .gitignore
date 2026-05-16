@@ -38,3 +38,4 @@ firmware.bin
 firmware.elf
 demo
 .data
+.claude

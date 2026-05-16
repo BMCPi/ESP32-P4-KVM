@@ -107,6 +107,7 @@ SECTIONS
     {
         . = ALIGN(4);
         _sdata = ABSOLUTE(.);
+        __global_pointer$ = _sdata + 0x800;
         *(.sdata)
         *(.sdata.*)
         *(.data .data.*)
