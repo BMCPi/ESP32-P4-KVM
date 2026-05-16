@@ -7,6 +7,7 @@ package proto
 import (
 	fmt "fmt"
 	protobuf_go_lite "github.com/aperturerobotics/protobuf-go-lite"
+	json "github.com/aperturerobotics/protobuf-go-lite/json"
 	io "io"
 	slices "slices"
 )
@@ -317,6 +318,233 @@ func (this *ErrorResponse) EqualMessageVT(thatMsg any) bool {
 	}
 	return this.EqualVT(that)
 }
+
+// MarshalProtoJSON marshals the ResetRequest message to JSON.
+func (x *ResetRequest) MarshalProtoJSON(s *json.MarshalState) {
+	if x == nil {
+		s.WriteNil()
+		return
+	}
+	s.WriteObjectStart()
+	var wroteField bool
+	if x.ResetType != "" || s.HasField("ResetType") {
+		s.WriteMoreIf(&wroteField)
+		s.WriteObjectField("ResetType")
+		s.WriteString(x.ResetType)
+	}
+	s.WriteObjectEnd()
+}
+
+// MarshalJSON marshals the ResetRequest to JSON.
+func (x *ResetRequest) MarshalJSON() ([]byte, error) {
+	return json.DefaultMarshalerConfig.Marshal(x)
+}
+
+// UnmarshalProtoJSON unmarshals the ResetRequest message from JSON.
+func (x *ResetRequest) UnmarshalProtoJSON(s *json.UnmarshalState) {
+	if s.ReadNil() {
+		return
+	}
+	s.ReadObject(func(key string) {
+		switch key {
+		default:
+			s.Skip() // ignore unknown field
+		case "reset_type", "ResetType":
+			s.AddField("reset_type")
+			x.ResetType = s.ReadString()
+		}
+	})
+}
+
+// UnmarshalJSON unmarshals the ResetRequest from JSON.
+func (x *ResetRequest) UnmarshalJSON(b []byte) error {
+	return json.DefaultUnmarshalerConfig.Unmarshal(b, x)
+}
+
+// MarshalProtoJSON marshals the ResetResponse message to JSON.
+func (x *ResetResponse) MarshalProtoJSON(s *json.MarshalState) {
+	if x == nil {
+		s.WriteNil()
+		return
+	}
+	s.WriteObjectStart()
+	var wroteField bool
+	if x.Status != "" || s.HasField("Status") {
+		s.WriteMoreIf(&wroteField)
+		s.WriteObjectField("Status")
+		s.WriteString(x.Status)
+	}
+	s.WriteObjectEnd()
+}
+
+// MarshalJSON marshals the ResetResponse to JSON.
+func (x *ResetResponse) MarshalJSON() ([]byte, error) {
+	return json.DefaultMarshalerConfig.Marshal(x)
+}
+
+// UnmarshalProtoJSON unmarshals the ResetResponse message from JSON.
+func (x *ResetResponse) UnmarshalProtoJSON(s *json.UnmarshalState) {
+	if s.ReadNil() {
+		return
+	}
+	s.ReadObject(func(key string) {
+		switch key {
+		default:
+			s.Skip() // ignore unknown field
+		case "status", "Status":
+			s.AddField("status")
+			x.Status = s.ReadString()
+		}
+	})
+}
+
+// UnmarshalJSON unmarshals the ResetResponse from JSON.
+func (x *ResetResponse) UnmarshalJSON(b []byte) error {
+	return json.DefaultUnmarshalerConfig.Unmarshal(b, x)
+}
+
+// MarshalProtoJSON marshals the SystemStatus message to JSON.
+func (x *SystemStatus) MarshalProtoJSON(s *json.MarshalState) {
+	if x == nil {
+		s.WriteNil()
+		return
+	}
+	s.WriteObjectStart()
+	var wroteField bool
+	if x.Id != "" || s.HasField("Id") {
+		s.WriteMoreIf(&wroteField)
+		s.WriteObjectField("Id")
+		s.WriteString(x.Id)
+	}
+	if x.Name != "" || s.HasField("Name") {
+		s.WriteMoreIf(&wroteField)
+		s.WriteObjectField("Name")
+		s.WriteString(x.Name)
+	}
+	if x.PowerState != "" || s.HasField("PowerState") {
+		s.WriteMoreIf(&wroteField)
+		s.WriteObjectField("PowerState")
+		s.WriteString(x.PowerState)
+	}
+	s.WriteObjectEnd()
+}
+
+// MarshalJSON marshals the SystemStatus to JSON.
+func (x *SystemStatus) MarshalJSON() ([]byte, error) {
+	return json.DefaultMarshalerConfig.Marshal(x)
+}
+
+// UnmarshalProtoJSON unmarshals the SystemStatus message from JSON.
+func (x *SystemStatus) UnmarshalProtoJSON(s *json.UnmarshalState) {
+	if s.ReadNil() {
+		return
+	}
+	s.ReadObject(func(key string) {
+		switch key {
+		default:
+			s.Skip() // ignore unknown field
+		case "id", "Id":
+			s.AddField("id")
+			x.Id = s.ReadString()
+		case "name", "Name":
+			s.AddField("name")
+			x.Name = s.ReadString()
+		case "power_state", "PowerState":
+			s.AddField("power_state")
+			x.PowerState = s.ReadString()
+		}
+	})
+}
+
+// UnmarshalJSON unmarshals the SystemStatus from JSON.
+func (x *SystemStatus) UnmarshalJSON(b []byte) error {
+	return json.DefaultUnmarshalerConfig.Unmarshal(b, x)
+}
+
+// MarshalProtoJSON marshals the Healthz message to JSON.
+func (x *Healthz) MarshalProtoJSON(s *json.MarshalState) {
+	if x == nil {
+		s.WriteNil()
+		return
+	}
+	s.WriteObjectStart()
+	var wroteField bool
+	if x.Status != "" || s.HasField("status") {
+		s.WriteMoreIf(&wroteField)
+		s.WriteObjectField("status")
+		s.WriteString(x.Status)
+	}
+	s.WriteObjectEnd()
+}
+
+// MarshalJSON marshals the Healthz to JSON.
+func (x *Healthz) MarshalJSON() ([]byte, error) {
+	return json.DefaultMarshalerConfig.Marshal(x)
+}
+
+// UnmarshalProtoJSON unmarshals the Healthz message from JSON.
+func (x *Healthz) UnmarshalProtoJSON(s *json.UnmarshalState) {
+	if s.ReadNil() {
+		return
+	}
+	s.ReadObject(func(key string) {
+		switch key {
+		default:
+			s.Skip() // ignore unknown field
+		case "status":
+			s.AddField("status")
+			x.Status = s.ReadString()
+		}
+	})
+}
+
+// UnmarshalJSON unmarshals the Healthz from JSON.
+func (x *Healthz) UnmarshalJSON(b []byte) error {
+	return json.DefaultUnmarshalerConfig.Unmarshal(b, x)
+}
+
+// MarshalProtoJSON marshals the ErrorResponse message to JSON.
+func (x *ErrorResponse) MarshalProtoJSON(s *json.MarshalState) {
+	if x == nil {
+		s.WriteNil()
+		return
+	}
+	s.WriteObjectStart()
+	var wroteField bool
+	if x.Error != "" || s.HasField("error") {
+		s.WriteMoreIf(&wroteField)
+		s.WriteObjectField("error")
+		s.WriteString(x.Error)
+	}
+	s.WriteObjectEnd()
+}
+
+// MarshalJSON marshals the ErrorResponse to JSON.
+func (x *ErrorResponse) MarshalJSON() ([]byte, error) {
+	return json.DefaultMarshalerConfig.Marshal(x)
+}
+
+// UnmarshalProtoJSON unmarshals the ErrorResponse message from JSON.
+func (x *ErrorResponse) UnmarshalProtoJSON(s *json.UnmarshalState) {
+	if s.ReadNil() {
+		return
+	}
+	s.ReadObject(func(key string) {
+		switch key {
+		default:
+			s.Skip() // ignore unknown field
+		case "error":
+			s.AddField("error")
+			x.Error = s.ReadString()
+		}
+	})
+}
+
+// UnmarshalJSON unmarshals the ErrorResponse from JSON.
+func (x *ErrorResponse) UnmarshalJSON(b []byte) error {
+	return json.DefaultUnmarshalerConfig.Unmarshal(b, x)
+}
+
 func (m *ResetRequest) MarshalVT() (dAtA []byte, err error) {
 	if m == nil {
 		return nil, nil

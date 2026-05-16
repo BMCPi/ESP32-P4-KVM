@@ -9,6 +9,6 @@ plugins:
     out: pkg/proto
     opt:
       - paths=source_relative
-      - features=marshal+unmarshal+size+equal+clone
+      - features=marshal+unmarshal+size+equal+clone+json
 inputs:
   - directory: pkg/proto
