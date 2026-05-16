@@ -35,5 +35,6 @@ bin
 version
 out
 firmware.bin
+firmware.elf
 demo
 .data

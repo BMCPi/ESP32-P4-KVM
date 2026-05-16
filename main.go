@@ -6,8 +6,8 @@ import (
 	"time"
 	"unsafe"
 
-	// "github.com/bmcpi/esp32-p4-kvm/pkg/api"
-	// "github.com/bmcpi/esp32-p4-kvm/pkg/power"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/api"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/power"
   "github.com/bmcpi/esp32-p4-kvm/pkg/serial"
 )
 
@@ -31,11 +31,11 @@ func main() {
 	println("Starting ESP32-P4 KVM Controller")
 
 	println("Setting up GPIO...")
-	// power.Setup()
+	power.Setup()
 	println("GPIO setup complete.")
 
 	println("Starting power action worker...")
-	// api.StartPowerActionWorker()
+	api.StartPowerActionWorker()
 	println("Power action worker started.")
 
 	println("Initializing storage...")

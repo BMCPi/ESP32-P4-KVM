@@ -9,37 +9,39 @@ clean-screen:
 	sudo screen -wipe || true
 	sudo screen -ls | grep -E 'Attached|Detached' | cut -d. -f1 | awk '{print $$1}' | xargs -I {} sudo screen -X -S {} quit || true
 
-# Build firmware with TinyGo and patch the image header
+# Build firmware with TinyGo (ELF output) and convert to flashable .bin via esptool
 build:
-	@echo "Building ESP32-P4 firmware..."
-	tinygo build -target esp32p4 -ldflags="-X api.configuredResetAuthToken=change-me" -o firmware.bin .
-	@echo "Patching image header (chip_id=18, hash_appended=0)..."
-	python3 bundling/patch-esp32p4-image.py firmware.bin
+	@echo "Building ESP32-P4 firmware (ELF)..."
+	tinygo build -target esp32p4 -ldflags="-X api.configuredResetAuthToken=change-me" -o firmware.elf .
+	@echo "Converting ELF to ESP32-P4 image..."
+	esptool --chip esp32p4 elf2image -o firmware.bin firmware.elf
 
 build-demo:
-	@echo "Building ESP32-P4 demo firmware..."
-	tinygo build -target esp32p4 -o demo.bin ./cmd/demo
-	@echo "Patching image header (chip_id=18, hash_appended=0)..."
-	python3 bundling/patch-esp32p4-image.py demo.bin
+	@echo "Building ESP32-P4 demo firmware (ELF)..."
+	tinygo build -target esp32p4 -o demo.elf ./cmd/demo
+	@echo "Converting ELF to ESP32-P4 image..."
+	esptool --chip esp32p4 elf2image -o demo.bin demo.elf
 
 # Alias for build (cross-compile for consistency with workspace tasks)
 cross-compile: build
 
 # Flash firmware to device (clean screen first, retry up to 10× for WDT boot-loop churn)
 flash: build clean-screen
+	@if [ -z "$(CONSOLE_PORT)" ]; then echo "No /dev/cu.usb* device found."; exit 1; fi
 	@echo "Flashing ESP32-P4 firmware on $(CONSOLE_PORT)..."
 	@for i in $$(seq 1 10); do \
 		echo "Flash attempt $$i/10..."; \
-		tinygo flash -target esp32p4 -port $(CONSOLE_PORT) . && exit 0; \
+		esptool --chip esp32p4 --port $(CONSOLE_PORT) write_flash -z 0x10000 firmware.bin && exit 0; \
 		echo "Attempt $$i failed, retrying in 1s..."; \
 		sleep 1; \
 	done; exit 1
 
-flash-demo: clean-screen
+flash-demo: build-demo clean-screen
+	@if [ -z "$(CONSOLE_PORT)" ]; then echo "No /dev/cu.usb* device found."; exit 1; fi
 	@echo "Flashing ESP32-P4 demo firmware on $(CONSOLE_PORT)..."
 	@for i in $$(seq 1 10); do \
 		echo "Flash attempt $$i/10..."; \
-		tinygo flash -target esp32p4 -port $(CONSOLE_PORT) ./cmd/demo && exit 0; \
+		esptool --chip esp32p4 --port $(CONSOLE_PORT) write_flash -z 0x10000 demo.bin && exit 0; \
 		echo "Attempt $$i failed, retrying in 1s..."; \
 		sleep 1; \
 	done; exit 1

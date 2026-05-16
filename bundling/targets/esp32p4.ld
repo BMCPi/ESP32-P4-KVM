@@ -4,7 +4,8 @@
  *   - HP SRAM is unified (no separate IRAM/DRAM virtual address spaces):
  *     accessible at 0x4FF40000..0x4FFAEFC0 (~444KB, for chip rev ≥ v1.3).
  *     (0x4FF00000..0x4FF40000 is reserved for L2 cache with 256KB config.)
- *   - IROM is on the instruction bus at 0x40000000.
+ *   - IROM is on the instruction bus at 0x40000000..0x4C000000 (192 MB shared
+ *     IROM/DROM window; esptool IROM_MAP_END = DROM_MAP_END = 0x4C000000).
  *   - The firmware binary is read from flash offset 0x2000 (not 0x0):
  *     the P4 ROM bootloader looks for the second-stage image at 0x2000.
  *   - The MMU still works in 64KB pages, so paddr%64KB == vaddr%64KB must hold.
@@ -24,8 +25,10 @@ MEMORY
      */
     SRAM (rwx) : ORIGIN = 0x4FF40000, LENGTH = 0x6EFC0  /* ~444 KB */
 
-    /* Flash mapped via L2-cache MMU — instruction bus */
-    IROM (rx)  : ORIGIN = 0x40000000, LENGTH = 64M
+    /* Flash mapped via L2-cache MMU — instruction+data bus (shared MMU window).
+     * Actual range: 0x40000000..0x4C000000 (192 MB), per esptool IROM_MAP_END.
+     * DROM is not used as a separate region (see note above re ECO2 bootloader). */
+    IROM (rx)  : ORIGIN = 0x40000000, LENGTH = 192M
 }
 
 ENTRY(call_start_cpu0)
