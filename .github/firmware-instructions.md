@@ -1,174 +1,169 @@
-# Firmware Boot Investigation — ESP32-P4 ECO2
+# Firmware Boot — ESP32-P4 ECO2
 
-## Session Summary (May 15, 2026)
+## Status: Booting ✅ (as of 2026-05-15)
 
-### Context
+The firmware boots cleanly from flash, runs through `_start`, executes
+`main.main`, and enters its main loop without crashing.  A representative
+boot trace:
 
-The firmware loads cleanly from flash (no "Invalid image block" — fixed in prior sessions) but crashes immediately with **Illegal instruction** at `PC = 0x40006b9e`, the very first instruction of `main()` in IROM. MTVAL = 0x00000000, meaning the CPU fetches `0x0000` (C.UNIMP) instead of the expected `0x1141` (c.addi sp,-16).
-
----
-
-### Changes Made
-
-#### 1. `bundling/targets/esp32p4.ld` — Global pointer fix
-
-Added `__global_pointer$` to the `.data` section so the linker emits a valid `gp` value:
-
-```ld
-_sdata = ABSOLUTE(.);
-__global_pointer$ = _sdata + 0x800;
+```text
+ESP-ROM:esp32p4-eco2-20240710
+…
+load:0x40002020,len:0x15dc0
+load:0x4ff423a0,len:0x69d4
+entry 0x4ff48cf4
+SM                                        ← call_start_cpu0 diagnostic markers
+>WBVTI                                    ← runtime diagnostic markers
+Starting ESP32-P4 KVM Controller
+Setting up GPIO...
+GPIO setup complete.
+Initializing storage...
+Storage warning: Virtual Media unavailable - SD card configure:
+Main loop: running...
+Main loop: running...
 ```
 
-**Why:** Without this, `gp` was `0x00000800` (raw `0x800` with no base), causing all GP-relative loads/stores in SRAM to access wrong addresses. After the fix, `gp = 0x4ff42ba0` (confirmed in crash dumps).
-
-This file has been copied to `/opt/homebrew/Cellar/tinygo/0.41.1/targets/esp32p4.ld`.
-
 ---
 
-#### 2. `bundling/src/device/esp/esp32p4.S` — Cache register fix in `call_start_cpu0`
+## Root causes and fixes
 
-Expanded `call_start_cpu0` (the ROM entry point, runs in SRAM) to explicitly clear three cache-related registers before jumping to `_start`:
+### 1. IROM fetched 0x0000 → Illegal instruction at `main()` entry
 
-```asm
-call_start_cpu0:
-    lui  t0, 0x3ff10          // t0 = 0x3ff10000 = CACHE peripheral base
+**Symptom (pre-fix):** Every boot crashed at `PC = 0x40006b9e` (the first
+instruction of `main()` in IROM) with `MTVAL = 0x00000000`.  The CPU was
+fetching `0x0000` (C.UNIMP) instead of the expected `0x1141`
+(`c.addi sp,-16`) even though the firmware binary contained the correct
+bytes at flash offset `0x4b9e`.
 
-    // 1. L1_ICACHE_CTRL (0x3ff10000): clear SHUT_IBUS0 and SHUT_IBUS1 (bits 0-1)
-    lw   t1, 0(t0)
-    andi t1, t1, -4           // ~0x3 → clear bits 0-1
-    sw   t1, 0(t0)
+**Cause:** The ECO2 ROM bootloader does not leave the L2 cache FLASH MMU
+in a state the hardware understands for the IROM window.  ESP-IDF v5.4's
+`soc/ext_mem_defs.h` shows the entry encoding for ESP32-P4:
 
-    // 2. L2_BYPASS_CACHE_CONF (0x3ff10274): clear BYPASS_L2_CACHE_EN (bit 5)
-    lw   t1, 0x274(t0)
-    andi t1, t1, -33          // ~0x20 → clear bit 5
-    sw   t1, 0x274(t0)
-
-    // 3. L2_CACHE_FREEZE_CTRL (0x3ff1028C): clear L2_CACHE_FREEZE_EN (bit 20)
-    lw   t1, 0x28c(t0)
-    lui  t2, 0x100            // t2 = 0x00100000 = (1 << 20)
-    not  t2, t2               // t2 = 0xFFEFFFFF = ~(1 << 20)
-    and  t1, t1, t2
-    sw   t1, 0x28c(t0)
-
-    j    _start
+```c
+#define SOC_MMU_FLASH_VALID    BIT(12)   /* 0x1000 */
+#define SOC_MMU_PSRAM_VALID    BIT(11)
+#define SOC_MMU_ACCESS_PSRAM   BIT(10)
+#define SOC_MMU_PAGE_SIZE      0x10000   /* 64 KB pages */
 ```
 
-**Why:** Hypothesis was that the ROM leaves the L2 cache frozen or bypassed on ECO2 before jumping to our code, causing instruction fetches from IROM to return `0x0000`.
+(Earlier notes that the valid bit was `0x80000000` were wrong — that
+position is from older Espressif chips.  The actual FLASH valid bit on
+ESP32-P4 is `BIT(12)`.)
 
-**What the crash dumps revealed:** All three registers were already `0` when our code ran (confirmed via register state in the Guru Meditation dumps):
+**Fix — [bundling/src/device/esp/esp32p4.S](../bundling/src/device/esp/esp32p4.S):**
+`call_start_cpu0` now:
 
-- `T1 = 0x00000000` after step 1 → `L1_ICACHE_CTRL` was already `0` (SHUT_IBUS0/1 already clear)
-- `T1 = 0x00000000` after step 2 → `L2_BYPASS_CACHE_CONF` was already `0` (no bypass)
-- `T2 = 0xFFEFFFFF` and `T1 = 0x00000000` after step 3 → `L2_CACHE_FREEZE_CTRL` was already `0` (not frozen)
+1. Emits `S` on UART0 (diagnostic; proves SRAM execution).
+2. Clears `L1_ICACHE_CTRL`, `L1_BYPASS_CACHE_CONF`,
+   `L2_BYPASS_CACHE_CONF`, and `L2_CACHE_FREEZE_CTRL` to known-good
+   states.
+3. Writes 32 FLASH MMU entries via the SPI0 indirect registers
+   (`SPI_MEM_C_MMU_ITEM_INDEX_REG @ 0x5008C380`,
+   `SPI_MEM_C_MMU_ITEM_CONTENT_REG @ 0x5008C37C`):
+   each entry value is `0x1000 | i`, mapping virtual page `i` of the
+   IROM window to flash physical page `i`.  This covers
+   `0x40000000..0x40200000` (2 MB), more than the ~96 KB `.text`
+   actually uses.
+4. Invalidates all caches via `SYNC_CTRL` (CACHE base `+0x98`) so any
+   stale `0x0000` cache lines installed by the ROM are dropped.
+5. Emits `M` on UART0 (diagnostic; proves MMU/cache work completed).
+6. Jumps to `_start`.
 
-The cache peripheral is in a correct state. These writes are no-ops but harmless.
+### 2. Global pointer was uninitialised
 
-This file has been copied to `/opt/homebrew/Cellar/tinygo/0.41.1/src/device/esp/esp32p4.S`.
+**Cause:** `gp` was `0x00000800` (raw `0x800` with no base symbol),
+breaking every GP-relative load/store in SRAM.
+
+**Fix — [bundling/targets/esp32p4.ld](../bundling/targets/esp32p4.ld):**
+added `__global_pointer$ = _sdata + 0x800;` inside `.data`.  Confirmed by
+`gp = 0x4ff42ba0` in subsequent crash dumps.
+
+### 3. DROM segment was DMA-loaded to 0x44000000 by the ROM
+
+**Cause:** The ECO2 ROM bootloader does not handle the separate DROM
+flash window; placing `.rodata` there made the ROM try to DMA-copy it
+into read-only address space (`Store/AMO access fault`).
+
+**Fix — [bundling/targets/esp32p4.ld](../bundling/targets/esp32p4.ld):**
+`.rodata` is placed in SRAM alongside `.data`.  Only `.text` lives in
+flash via the IROM window.
+
+### 4. Watchdog timers reset the chip mid-boot
+
+**Fix — [bundling/src/runtime/runtime_esp32p4.go](../bundling/src/runtime/runtime_esp32p4.go):**
+runtime `main()` disables TIMG0 WDT, TIMG1 WDT, LP_WDT RWDT, and
+LP_WDT SWD before doing anything else.  ESP32-P4 uses the same
+write-protect key (`0x50D83AA1`) for RWDT and SWD, unlike older C3/S3
+(which use `0x8F1D312A` for SWD).
+
+### 5. SD-card driver crashed `runtime.alloc` with 65535 per-CMD allocations
+
+**Symptom (after the IROM fix):** Boot ran successfully through
+`Initializing storage...` and then crashed inside `runtime.alloc`
+(`PC = 0x40005026`, `RA = sdcard.cmd+0x10e`, `MCAUSE = 0x38000005`,
+fault addr `0xFFFFFFFF`).  The disassembly at the crash PC is the
+list-unlink step of `popFreeRange`, with `a3` (the freeRange node
+pointer) holding garbage — GC free-list corruption after sustained heap
+pressure.
+
+**Cause:** `tinygo.org/x/drivers/sdcard` v0.31.0 `cmd()` allocates a
+fresh `[]byte{0xFF}` on every iteration of its 65 535-iteration response
+poll.  With no SD card attached, that loop runs to completion on every
+CMD0 attempt, producing tens of thousands of 1-byte heap allocations.
+TinyGo's blocks GC corrupts its free list under that pressure and
+panics inside `popFreeRange`.
+
+**Fix — [bundling/third_party/tinygo.org/x/drivers/sdcard/sdcard.go](../bundling/third_party/tinygo.org/x/drivers/sdcard/sdcard.go):**
+reuse the pre-allocated `cmdbuf[:1]` (set to `0xFF`) instead of a
+literal each iteration.  No more per-iteration allocation, GC stays
+healthy, and the driver returns `0xFF` to the caller which surfaces as
+`fmt.Errorf("no SD card")` → handled by the optional-feature path in
+[main.go](../main.go).
 
 ---
 
-#### 3. `bundling/src/runtime/runtime_esp32p4.go` — Diagnostic checkpoints
+## Build workflow
 
-Added `rawput` character markers (`>`, `W`, `B`, `V`, `T`, `I`) at the start of `main()` to detect how far the runtime gets before crashing. None have appeared in serial output yet — the crash happens before the `main()` body executes, even though PC = `0x40006b9e` is the first instruction of `main()`.
+`make build` is now self-healing: it runs `apply-overrides` first, which
+copies every file under `bundling/` to its destination (TinyGo install
+dir for runtime/linker overrides; Go module cache for the sdcard patch).
+A `brew upgrade tinygo` or `go clean -modcache` no longer silently
+regresses the firmware.
 
----
+| Source under `bundling/`                                | Destination                                                                            |
+|---------------------------------------------------------|----------------------------------------------------------------------------------------|
+| `src/device/esp/esp32p4.S`                              | `$(tinygo env TINYGOROOT)/src/device/esp/esp32p4.S`                                    |
+| `targets/esp32p4.ld`                                    | `$(tinygo env TINYGOROOT)/targets/esp32p4.ld`                                          |
+| `src/runtime/runtime_esp32p4.go`                        | `$(tinygo env TINYGOROOT)/src/runtime/runtime_esp32p4.go`                              |
+| `third_party/tinygo.org/x/drivers/sdcard/sdcard.go`     | `$(go env GOMODCACHE)/tinygo.org/x/drivers@v0.31.0/sdcard/sdcard.go`                   |
 
-### Key Findings
-
-| Register / Address | Value | Meaning |
-|---|---|---|
-| `L1_ICACHE_CTRL` @ 0x3ff10000 | `0x00000000` | SHUT_IBUS0/1 clear — instruction buses open ✓ |
-| `L2_BYPASS_CACHE_CONF` @ 0x3ff10274 | `0x00000000` | Cache bypass disabled ✓ |
-| `L2_CACHE_FREEZE_CTRL` @ 0x3ff1028C | `0x00000000` | Cache not frozen ✓ |
-| `GP` | `0x4ff42ba0` | Global pointer fixed ✓ |
-| `firmware.bin` @ file offset 0x4b9e | `0x41 0x11` | Correct bytes for `c.addi sp,-16` ✓ |
-
-The cache hardware is configured correctly. The firmware binary contains the right instruction bytes at the IROM crash location. The crash is still happening.
-
----
-
-### Unresolved: Why Does IROM Fetch Return `0x0000`?
-
-Despite the cache appearing functional, the CPU reads `0x0000` from VMA `0x40006b9e`. Remaining hypotheses:
-
-1. **L2 cache MMU not set up** — The ROM prints `load:0x40002020,len:0x15dbc` but may not be configuring the L2 MMU page table on ECO2. The IROM window (`0x40000000+`) has no path to flash without MMU entries. The MMU is accessed indirectly via `SPI_MEM_MMU_ITEM_INDEX` (SPI0 + 0x380) and `SPI_MEM_MMU_ITEM_CONTENT` (SPI0 + 0x37C).
-
-2. **Wrong flash page mapped** — The ROM might map the wrong flash page (e.g., off-by-one due to the firmware header at flash offset 0x2000), causing valid cache lookups that return wrong data. The expected mapping: VMA page 0 (`0x40000000–0x4000FFFF`) → flash page 0 (`0x0000–0xFFFF`).
-
-3. **L1 cache bypass** — `L1_BYPASS_CACHE_CONF` (CACHE + 0x8 = 0x3ff10008) was not read/cleared. If L1 instruction bypass is enabled and L2 has no MMU mapping, fetches could silently return 0.
-
----
-
-### Next Steps
-
-1. **Read the MMU table** — Add assembly in `call_start_cpu0` to read MMU entry 0 via SPI0 indirect registers and print to UART0 (TX FIFO @ 0x500ca000), then compare to expected value `0x80000000` (valid + page 0).
-
-2. **Manually set up MMU** — If MMU entry 0 is 0 (not set up), write it directly:
-   - Write `0` to `SPI_MEM_MMU_ITEM_INDEX` (SPI0 + 0x380 = 0x5008c380)
-   - Write `0x80000000` (valid bit + page number 0) to `SPI_MEM_MMU_ITEM_CONTENT` (SPI0 + 0x37C = 0x5008c37C)
-   - Repeat for page 1 (index=1, content=`0x80000001`)
-
-3. **Check `L1_BYPASS_CACHE_CONF`** — Read CACHE + 0x08 and clear any bypass bits.
-
-4. **Try calling `Cache_FLASH_MMU_Set`** — The linker script defines `Cache_FLASH_MMU_Set = 0x4fc00518` as verified for ECO2. Call it from assembly with correct args to establish the IROM → flash mapping, then jump to `_start`.
-
----
-
-### Build Workflow Reminder
-
-`bundling/` files are a mirror — edits there have **no effect** until manually copied to the TinyGo installation:
+To rebuild + flash + observe:
 
 ```bash
-cp bundling/src/device/esp/esp32p4.S /opt/homebrew/Cellar/tinygo/0.41.1/src/device/esp/esp32p4.S
-cp bundling/targets/esp32p4.ld       /opt/homebrew/Cellar/tinygo/0.41.1/targets/esp32p4.ld
-cp bundling/src/runtime/runtime_esp32p4.go /opt/homebrew/Cellar/tinygo/0.41.1/src/runtime/runtime_esp32p4.go
+make flash
+sudo screen /dev/cu.usbmodem5B5F0916211 115200
+# detach with Ctrl+A k y
 ```
-
-Then: `make build && make flash`.
 
 ---
 
-## Open Tasks
+## Open follow-ups
 
-### Current Error
-
-```
-Guru Meditation Error: Core 0 panic'ed (Illegal instruction)
-PC      : 0x40006b9e  RA      : 0x4ff48cf4  SP      : 0x4ff42000  GP      : 0x4ff42ba0
-T0      : 0x3ff10000  T1      : 0x00000000  T2      : 0xffefffff
-MTVAL   : 0x00000000
-```
-
-The CPU fetches `0x0000` (C.UNIMP) from VMA `0x40006b9e` (first instruction of `main()`) every boot. All cache control registers are confirmed correct. The firmware binary has the right bytes (`0x41 0x11`) at flash file offset `0x4b9e`. The L2 cache MMU mapping from the IROM window to flash is the prime suspect.
-
-### Tasks
-
-- [ ] **Read L2 cache MMU entry 0** — In `call_start_cpu0`, before jumping to `_start`, write index `0` to `SPI_MEM_MMU_ITEM_INDEX` (SPI0 + 0x380 = `0x5008c380`), read back via `SPI_MEM_MMU_ITEM_CONTENT` (SPI0 + 0x37C = `0x5008c37C`), and print the value to UART0 TX FIFO (`0x500ca000`). Expected: `0x80000000` (valid bit set, page 0). If `0x00000000`, the ROM did not set up the IROM MMU mapping.
-
-- [ ] **Read L2 cache MMU entry 1** — Same as above with index `1`. Expected: `0x80000001` (valid + page 1) to cover IROM VMA `0x40010000–0x4001FFFF`.
-
-- [ ] **Manually write MMU entries if missing** — If entries are 0, add writes in `call_start_cpu0` immediately after reading:
-
-  ```asm
-  // SPI0 base = 0x5008c000
-  lui  t3, 0x5008c      // t3 = 0x5008c000
-  sw   zero, 0x380(t3)  // MMU_ITEM_INDEX = 0
-  lui  t4, 0x80000      // t4 = 0x80000000 (valid bit)
-  sw   t4, 0x37c(t3)    // MMU_ITEM_CONTENT = 0x80000000 (page 0)
-  li   t4, 1
-  sw   t4, 0x380(t3)    // MMU_ITEM_INDEX = 1
-  lui  t4, 0x80000
-  ori  t4, t4, 1
-  sw   t4, 0x37c(t3)    // MMU_ITEM_CONTENT = 0x80000001 (page 1)
-  ```
-
-- [ ] **Check `L1_BYPASS_CACHE_CONF`** — Read CACHE + 0x08 (`0x3ff10008`) in `call_start_cpu0` and clear any set bits. If L1 instruction bypass is on and L2 has no MMU mapping, fetches return `0x0000` silently.
-
-- [ ] **Verify MMU page size matches flash layout** — The expected mapping assumes 64 KB pages and that VMA `0x40000000` aligns to flash physical `0x0000`. Confirm this by checking the `L2_CACHE_BLOCKSIZE_CONF` register (CACHE + 0x27C = `0x3ff1027C`) — value should be `4` (2^(4+12) = 64 KB pages). If it is a different value, recalculate page numbers accordingly.
-
-- [ ] **Remove diagnostic `rawput` checkpoints from runtime** — Once the boot crash is resolved and the serial markers (`>`, `W`, `B`, `V`, `T`, `I`) appear, remove them from `bundling/src/runtime/runtime_esp32p4.go` and copy the cleaned file to the TinyGo installation before the final build.
-
-- [ ] **Verify HTTP API after full boot** — Once `main()` executes, confirm the Redfish endpoint responds:
+- [ ] **Remove the diagnostic `S`/`M` UART writes** from
+  `call_start_cpu0` once we are confident the IROM/MMU fix is stable.
+  Currently they emit two stray bytes on every boot — harmless but
+  noisy.
+- [ ] **Remove the `>WBVTI` markers** from the runtime for the same
+  reason.
+- [ ] **Upstream the sdcard fix** to `tinygo.org/x/drivers` so we can
+  delete the module-cache patch step.
+- [ ] **Verify with a real SD card attached** — current testing only
+  proves the no-card error path is graceful.  With a card present,
+  `storage.StartVirtualMedia()` and the USB MSC pipeline should also
+  come up.
+- [ ] **Re-enable the API server** (`api.StartAPIServer`) in `main.go`
+  once `pkg/api` builds cleanly on this target, and verify the Redfish
+  endpoint:
 
   ```bash
   curl http://<device-ip>/healthz
