@@ -7,7 +7,7 @@ import (
 
 	"github.com/tinywasm/fmt"
 
-	"tinygo.org/x/drivers/sdcard"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/sdcard"
 )
 
 // lfsPartitionSize is the space reserved at the END of the SD card for the

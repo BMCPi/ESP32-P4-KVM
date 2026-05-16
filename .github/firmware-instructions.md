@@ -113,10 +113,13 @@ CMD0 attempt, producing tens of thousands of 1-byte heap allocations.
 TinyGo's blocks GC corrupts its free list under that pressure and
 panics inside `popFreeRange`.
 
-**Fix — [bundling/third_party/tinygo.org/x/drivers/sdcard/sdcard.go](../bundling/third_party/tinygo.org/x/drivers/sdcard/sdcard.go):**
-reuse the pre-allocated `cmdbuf[:1]` (set to `0xFF`) instead of a
-literal each iteration.  No more per-iteration allocation, GC stays
-healthy, and the driver returns `0xFF` to the caller which surfaces as
+**Fix — [pkg/sdcard/](../pkg/sdcard/):** vendor the
+`tinygo.org/x/drivers/sdcard@v0.31.0` package into the project and
+change `Device.cmd` to reuse the pre-allocated `cmdbuf[:1]` (set to
+`0xFF`) instead of a literal each iteration.  [pkg/storage/storage.go](../pkg/storage/storage.go)
+now imports `github.com/bmcpi/esp32-p4-kvm/pkg/sdcard` instead of the
+upstream path.  No more per-iteration allocation, GC stays healthy,
+and the driver returns `0xFF` to the caller which surfaces as
 `fmt.Errorf("no SD card")` → handled by the optional-feature path in
 [main.go](../main.go).
 
@@ -124,18 +127,21 @@ healthy, and the driver returns `0xFF` to the caller which surfaces as
 
 ## Build workflow
 
-`make build` is now self-healing: it runs `apply-overrides` first, which
-copies every file under `bundling/` to its destination (TinyGo install
-dir for runtime/linker overrides; Go module cache for the sdcard patch).
-A `brew upgrade tinygo` or `go clean -modcache` no longer silently
-regresses the firmware.
+`make build` is now self-healing for the TinyGo install: it runs
+`apply-overrides` first, which copies every file under `bundling/` to
+its destination inside `$(tinygo env TINYGOROOT)`.  A `brew upgrade
+tinygo` no longer silently regresses the firmware.
 
 | Source under `bundling/`                                | Destination                                                                            |
 |---------------------------------------------------------|----------------------------------------------------------------------------------------|
 | `src/device/esp/esp32p4.S`                              | `$(tinygo env TINYGOROOT)/src/device/esp/esp32p4.S`                                    |
 | `targets/esp32p4.ld`                                    | `$(tinygo env TINYGOROOT)/targets/esp32p4.ld`                                          |
 | `src/runtime/runtime_esp32p4.go`                        | `$(tinygo env TINYGOROOT)/src/runtime/runtime_esp32p4.go`                              |
-| `third_party/tinygo.org/x/drivers/sdcard/sdcard.go`     | `$(go env GOMODCACHE)/tinygo.org/x/drivers@v0.31.0/sdcard/sdcard.go`                   |
+
+The sdcard fix lives in [pkg/sdcard/](../pkg/sdcard/) (a fork of
+`tinygo.org/x/drivers/sdcard@v0.31.0` carrying the cmdbuf-reuse change)
+and is imported directly by `pkg/storage`, so it needs no module-cache
+override.
 
 To rebuild + flash + observe:
 

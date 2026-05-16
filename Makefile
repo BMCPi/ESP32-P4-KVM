@@ -3,17 +3,15 @@
 # Dynamically find ESP32 USB port
 CONSOLE_PORT ?= $(shell ls /dev/cu.usb* 2>/dev/null | head -1)
 
-# Locations of the TinyGo install and Go module cache that we patch with
-# project-local overrides. Resolved dynamically so the targets keep working
-# across `brew upgrade tinygo` and `go clean -modcache`.
+# Location of the TinyGo install that we patch with project-local
+# overrides. Resolved dynamically so the targets keep working across
+# `brew upgrade tinygo`.
 TINYGO_ROOT  ?= $(shell tinygo env TINYGOROOT)
-GOMODCACHE   ?= $(shell go env GOMODCACHE)
-SDCARD_VER   ?= v0.31.0
 
-# apply-overrides copies every file under bundling/ to its mirror destination.
-# This makes builds self-healing: a `brew upgrade tinygo` or `go clean
-# -modcache` no longer silently regresses the firmware to broken upstream
-# sources.
+# apply-overrides copies every file under bundling/ to its mirror
+# destination inside the TinyGo install.  This makes builds self-healing:
+# a `brew upgrade tinygo` no longer silently regresses the firmware to
+# broken upstream sources.
 #
 # Override list (kept in lockstep with bundling/ contents):
 #   bundling/src/device/esp/esp32p4.S       → $TINYGOROOT/src/device/esp/esp32p4.S
@@ -26,26 +24,18 @@ SDCARD_VER   ?= v0.31.0
 #       cannot DMA-load segments into the 0x44000000 DROM window).
 #   bundling/src/runtime/runtime_esp32p4.go → $TINYGOROOT/src/runtime/runtime_esp32p4.go
 #       Disables every watchdog via direct register writes.
-#   bundling/third_party/tinygo.org/x/drivers/sdcard/sdcard.go
-#       → $GOMODCACHE/tinygo.org/x/drivers@$SDCARD_VER/sdcard/sdcard.go
-#       Reuses cmdbuf in the cmd() response-poll loop.  The upstream loop
-#       allocates []byte{0xFF} on every iteration; with no card present
-#       that runs 65535 times per CMD0 attempt and overruns TinyGo's GC,
-#       which corrupts the free list and panics inside runtime.alloc.
+#
+# pkg/sdcard/ is a vendored fork of tinygo.org/x/drivers/sdcard@v0.31.0
+# carrying one fix (Device.cmd reuses cmdbuf in its 65535-iteration
+# response poll instead of allocating []byte{0xFF} per loop, which
+# overruns TinyGo's GC when no card is attached).  It is imported
+# directly by pkg/storage so no apply-overrides step is needed.
 apply-overrides:
 	@if [ -z "$(TINYGO_ROOT)" ]; then echo "TinyGo not found on PATH"; exit 1; fi
-	@if [ -z "$(GOMODCACHE)" ]; then echo "Go modcache not found"; exit 1; fi
 	@echo "Patching TinyGo install at $(TINYGO_ROOT)..."
 	@install -m 644 bundling/src/device/esp/esp32p4.S      "$(TINYGO_ROOT)/src/device/esp/esp32p4.S"
 	@install -m 644 bundling/targets/esp32p4.ld            "$(TINYGO_ROOT)/targets/esp32p4.ld"
 	@install -m 644 bundling/src/runtime/runtime_esp32p4.go "$(TINYGO_ROOT)/src/runtime/runtime_esp32p4.go"
-	@echo "Patching module cache at $(GOMODCACHE)/tinygo.org/x/drivers@$(SDCARD_VER)..."
-	@chmod u+w "$(GOMODCACHE)/tinygo.org/x/drivers@$(SDCARD_VER)/sdcard" \
-	           "$(GOMODCACHE)/tinygo.org/x/drivers@$(SDCARD_VER)/sdcard/sdcard.go"
-	@cp bundling/third_party/tinygo.org/x/drivers/sdcard/sdcard.go \
-	    "$(GOMODCACHE)/tinygo.org/x/drivers@$(SDCARD_VER)/sdcard/sdcard.go"
-	@chmod 444 "$(GOMODCACHE)/tinygo.org/x/drivers@$(SDCARD_VER)/sdcard/sdcard.go"
-	@chmod 555 "$(GOMODCACHE)/tinygo.org/x/drivers@$(SDCARD_VER)/sdcard"
 
 # Clean up ALL screen sessions (Attached or Detached) to free serial port
 clean-screen:
