@@ -6,9 +6,9 @@ syntax = "proto3";
 //
 // Generated bindings live in this same directory and are produced by
 // `protoc-gen-go-lite` (no reflection, no encoding/json).
-package bmc;
+package proto;
 
-option go_package = "github.com/bmcpi/esp32-p4-kvm/pkg/api/proto";
+option go_package = "github.com/bmcpi/esp32-p4-kvm/pkg/proto";
 
 // ResetRequest is the body of POST
 // /redfish/v1/Systems/1/Actions/ComputerSystem.Reset

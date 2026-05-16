@@ -14,9 +14,9 @@ import (
 	"github.com/tinywasm/fmt"
 	"tinygo.org/x/drivers/netlink"
 
-	proto "github.com/bmcpi/esp32-p4-kvm/pkg/api/proto"
 	"github.com/bmcpi/esp32-p4-kvm/pkg/ethernet"
 	"github.com/bmcpi/esp32-p4-kvm/pkg/power"
+	"github.com/bmcpi/esp32-p4-kvm/pkg/proto"
 )
 
 const (
@@ -82,11 +82,11 @@ const (
 )
 
 type request struct {
-	method      string
-	path        string
-	contentLen  int
-	resetToken  string
-	body        []byte // read from socket; len == contentLen
+	method     string
+	path       string
+	contentLen int
+	resetToken string
+	body       []byte // read from socket; len == contentLen
 }
 
 type response struct {
